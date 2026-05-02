@@ -6,7 +6,27 @@ USE smartmaint_db;
 CREATE TABLE tenants (
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
+    status ENUM('Ativo', 'Inadimplente', 'Cancelado', 'Trial') DEFAULT 'Ativo',
+    plan_type VARCHAR(50) DEFAULT 'Pro',
+    contact_email VARCHAR(255),
+    contact_phone VARCHAR(50),
+    contrato_inicio DATE,
+    contrato_fim DATE,
+    renovacao_auto BOOLEAN DEFAULT TRUE,
+    valor_mensal DECIMAL(10,2) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabela de Faturas (Invoices)
+CREATE TABLE invoices (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id VARCHAR(50) NOT NULL,
+    valor DECIMAL(10, 2) NOT NULL,
+    vencimento DATE NOT NULL,
+    status ENUM('Paga', 'Pendente', 'Atrasada') DEFAULT 'Pendente',
+    mes_ref VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
 );
 
 -- Tabela de Usuários
@@ -98,6 +118,6 @@ CREATE TABLE work_orders (
 INSERT INTO tenants (id, name) VALUES ('delp', 'DELP Engenharia'), ('stellantis', 'Stellantis');
 
 INSERT INTO users (tenant_id, name, email, password, role, is_master) VALUES 
-(NULL, 'Master', 'master@smartmaint.com', '123456', 'Dono', TRUE),
-('delp', 'Carlos (Dono)', 'dono@delp.com.br', '123456', 'Administrador', FALSE),
-('stellantis', 'Julia (Dona)', 'dono@stellantis.com', '123456', 'Administrador', FALSE);
+(NULL, 'Master', 'master@smartmaint.com', '$2b$10$a70zVnmJjbDO1YgAYyToGuNwrkOpvZSs0wPaiR3r.UzgpHXv1UwCu', 'Dono', TRUE),
+('delp', 'Carlos (Dono)', 'dono@delp.com.br', '$2b$10$a70zVnmJjbDO1YgAYyToGuNwrkOpvZSs0wPaiR3r.UzgpHXv1UwCu', 'Administrador', FALSE),
+('stellantis', 'Julia (Dona)', 'dono@stellantis.com', '$2b$10$a70zVnmJjbDO1YgAYyToGuNwrkOpvZSs0wPaiR3r.UzgpHXv1UwCu', 'Administrador', FALSE);

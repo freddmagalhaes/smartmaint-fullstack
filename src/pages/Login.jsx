@@ -19,10 +19,26 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      await login(email, password);
-      navigate('/');
+      // Primeiro, checar diretamente a resposta do servidor para capturar 403
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+
+      if (res.status === 403) {
+        const data = await res.json();
+        setError(data.error || 'Acesso bloqueado. Entre em contato com o suporte.');
+        setIsLoading(false);
+        return;
+      }
+
+      const success = await login(email, password);
+      if (success) {
+        navigate('/');
+      }
     } catch (err) {
-      setError('E-mail ou senha incorretos.');
+      setError('Erro de comunicação com o servidor.');
     } finally {
       setIsLoading(false);
     }

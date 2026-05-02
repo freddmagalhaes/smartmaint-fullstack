@@ -1,18 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Building2, Users, UserCircle, Shield, 
   CreditCard, Bell, Save, Plus, Trash2, Edit2,
-  Mail, ShieldCheck, ExternalLink, X
+  Mail, ShieldCheck, ExternalLink, X, FileText, CalendarDays, RefreshCw, CheckCircle2
 } from 'lucide-react';
 import { useAuth, ROLES } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 
 const Settings = () => {
-  const { user, hasRole } = useAuth();
+  const { user, token, activeTenant, tenants, hasRole } = useAuth();
   const { users, addUser, updateUser, deleteUser } = useData();
-  const [activeTab, setActiveTab] = useState(hasRole([ROLES.OWNER, ROLES.ADMIN]) ? 'company' : 'profile');
+  const [activeTab, setActiveTab] = useState(hasRole([ROLES.ROOT, ROLES.ADMIN]) ? 'company' : 'profile');
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
+  
+  // Dados do contrato do tenant ativo
+  const currentTenant = Array.isArray(tenants) ? tenants.find(t => t.id === activeTenant) : null;
   
   const [userFormData, setUserFormData] = useState({
     name: '',
@@ -21,10 +24,10 @@ const Settings = () => {
   });
 
   const tabs = [
-    { id: 'company', label: 'Empresa', icon: Building2, roles: [ROLES.OWNER, ROLES.ADMIN] },
-    { id: 'users', label: 'Equipe', icon: Users, roles: [ROLES.OWNER, ROLES.ADMIN] },
-    { id: 'profile', label: 'Meu Perfil', icon: UserCircle, roles: [ROLES.OWNER, ROLES.ADMIN, ROLES.USER] },
-    { id: 'billing', label: 'Faturamento', icon: CreditCard, roles: [ROLES.OWNER] },
+    { id: 'company', label: 'Empresa', icon: Building2, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN] },
+    { id: 'users', label: 'Equipe', icon: Users, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN] },
+    { id: 'profile', label: 'Meu Perfil', icon: UserCircle, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER, ROLES.USER] },
+    { id: 'billing', label: 'Faturamento', icon: CreditCard, roles: [ROLES.ROOT] },
   ];
 
   const handleOpenAddUser = () => {
@@ -101,7 +104,7 @@ const Settings = () => {
               <div style={styles.formGrid}>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Nome Fantasia</label>
-                  <input type="text" defaultValue={user?.company} style={styles.input} />
+                  <input type="text" defaultValue={currentTenant?.name || user?.company} style={styles.input} />
                 </div>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>CNPJ</label>
@@ -112,6 +115,90 @@ const Settings = () => {
                 <Save size={18} />
                 Salvar Alterações
               </button>
+
+              {/* Seção: Contrato de Prestação de Serviços */}
+              <div style={{ marginTop: '48px' }}>
+                <SectionHeader 
+                  title="Contrato de Prestação de Serviços" 
+                  description="Detalhes da vigência, renovação e valores do seu contrato com o SmartMaint." 
+                />
+
+                {currentTenant ? (
+                  <>
+                    {/* Status Card */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '16px',
+                      padding: '20px', borderRadius: '12px', marginBottom: '24px',
+                      background: currentTenant.status === 'Ativo' ? 'rgba(16, 185, 129, 0.06)' : 'rgba(239, 68, 68, 0.06)',
+                      border: `1px solid ${currentTenant.status === 'Ativo' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+                    }}>
+                      <CheckCircle2 size={22} color={currentTenant.status === 'Ativo' ? '#10b981' : '#ef4444'} />
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontWeight: '700', fontSize: '15px', color: 'var(--text-main)' }}>
+                          Contrato {currentTenant.status === 'Ativo' ? 'Ativo' : currentTenant.status}
+                        </p>
+                        <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                          Plano: <strong>{currentTenant.plan_type || 'Pro'}</strong> • Valor mensal: <strong>R$ {parseFloat(currentTenant.valor_mensal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                        </p>
+                      </div>
+                      {currentTenant.renovacao_auto ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 14px', borderRadius: '8px', background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.15)' }}>
+                          <RefreshCw size={14} color="var(--primary)" />
+                          <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--primary)' }}>Renovação Automática</span>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 14px', borderRadius: '8px', background: '#fef3c7', border: '1px solid #fcd34d' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '700', color: '#b45309' }}>Renovação Manual</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Datas do Contrato */}
+                    <div style={styles.formGrid}>
+                      <div style={styles.inputGroup}>
+                        <label style={styles.label}><CalendarDays size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Início do Contrato</label>
+                        <input type="date" value={currentTenant.contrato_inicio ? currentTenant.contrato_inicio.split('T')[0] : ''} style={styles.input} disabled />
+                      </div>
+                      <div style={styles.inputGroup}>
+                        <label style={styles.label}><CalendarDays size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Término / Renovação</label>
+                        <input type="date" value={currentTenant.contrato_fim ? currentTenant.contrato_fim.split('T')[0] : ''} style={styles.input} disabled />
+                      </div>
+                    </div>
+
+                    {/* Tempo restante */}
+                    {currentTenant.contrato_fim && (() => {
+                      const hoje = new Date();
+                      const fim = new Date(currentTenant.contrato_fim);
+                      const diffMs = fim - hoje;
+                      const diasRestantes = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                      const isExpiring = diasRestantes <= 30;
+                      return (
+                        <div style={{
+                          marginTop: '16px', padding: '14px 20px', borderRadius: '10px',
+                          background: isExpiring ? 'rgba(245, 158, 11, 0.06)' : 'rgba(30, 58, 138, 0.04)',
+                          border: `1px solid ${isExpiring ? 'rgba(245, 158, 11, 0.2)' : 'rgba(30, 58, 138, 0.1)'}`,
+                          display: 'flex', alignItems: 'center', gap: '10px'
+                        }}>
+                          <FileText size={16} color={isExpiring ? '#f59e0b' : 'var(--primary)'} />
+                          <span style={{ fontSize: '13px', color: 'var(--text-main)' }}>
+                            {diasRestantes > 0 ? (
+                              <>Faltam <strong>{diasRestantes} dias</strong> para a {currentTenant.renovacao_auto ? 'renovação automática' : 'expiração'} do contrato.</>
+                            ) : (
+                              <><strong style={{ color: '#ef4444' }}>Contrato expirado</strong> há {Math.abs(diasRestantes)} dias.</>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '20px' }}>
+                      Para alterações contratuais (cancelamento, upgrade de plano ou mudança no tipo de renovação), entre em contato com o suporte SmartMaint.
+                    </p>
+                  </>
+                ) : (
+                  <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Dados do contrato não disponíveis.</p>
+                )}
+              </div>
             </div>
           )}
 
@@ -248,10 +335,22 @@ const Settings = () => {
                     value={userFormData.role}
                     onChange={(e) => setUserFormData({...userFormData, role: e.target.value})}
                   >
-                    <option value="ADMINISTRADOR">Administrador</option>
-                    <option value="USUARIO">Operador (Usuário)</option>
+                    <option value="Administrador">Administrador</option>
+                    <option value="Usuário">Operador (Usuário)</option>
                   </select>
                 </div>
+                {!editingUserId && (
+                  <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
+                    <label style={styles.label}>Senha de Acesso (Provisória)</label>
+                    <input 
+                      type="password" 
+                      style={styles.input} 
+                      placeholder="Ex: 123456"
+                      value={userFormData.password || ''}
+                      onChange={(e) => setUserFormData({...userFormData, password: e.target.value})}
+                    />
+                  </div>
+                )}
               </div>
               <div style={styles.modalFooter}>
                 <button type="button" onClick={() => setIsUserModalOpen(false)} style={styles.cancelBtn}>Cancelar</button>

@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, ROLES } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
+import { Toaster } from 'sonner';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -12,97 +13,104 @@ import FMEA from './pages/FMEA';
 import WorkOrders from './pages/WorkOrders';
 import Settings from './pages/Settings';
 import Layout from './components/Layout';
+import BackofficeLayout from './components/BackofficeLayout';
+import Backoffice from './pages/Backoffice';
 
 function App() {
   return (
     <AuthProvider>
       <DataProvider>
         <Router>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          
-          <Route 
-            path="/" 
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <Dashboard />
-                </Layout>
-              </ProtectedRoute>
-            } 
-          />
+          <Toaster position="top-right" richColors />
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            
+            {/* Dashboard - Root, Backoffice, Admin, Gerente */}
+            <Route 
+              path="/" 
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]}>
+                  <Layout><Dashboard /></Layout>
+                </ProtectedRoute>
+              } 
+            />
 
-          <Route 
-            path="/equipments" 
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <Equipments />
-                </Layout>
-              </ProtectedRoute>
-            } 
-          />
+            {/* O.S. - Todos os níveis */}
+            <Route 
+              path="/work-orders" 
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER, ROLES.USER]}>
+                  <Layout><WorkOrders /></Layout>
+                </ProtectedRoute>
+              } 
+            />
 
-          <Route 
-            path="/failures" 
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <Failures />
-                </Layout>
-              </ProtectedRoute>
-            } 
-          />
+            {/* Equipamentos - Root, Backoffice, Admin, Gerente */}
+            <Route 
+              path="/equipments" 
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]}>
+                  <Layout><Equipments /></Layout>
+                </ProtectedRoute>
+              } 
+            />
 
-          <Route 
-            path="/work-orders" 
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <WorkOrders />
-                </Layout>
-              </ProtectedRoute>
-            } 
-          />
+            {/* Falhas - Root, Backoffice, Admin, Gerente */}
+            <Route 
+              path="/failures" 
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]}>
+                  <Layout><Failures /></Layout>
+                </ProtectedRoute>
+              } 
+            />
 
-          <Route 
-            path="/fmea" 
-            element={
-              <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
-                <Layout>
-                  <FMEA />
-                </Layout>
-              </ProtectedRoute>
-            } 
-          />
+            {/* FMEA - Root, Backoffice, Admin */}
+            <Route 
+              path="/fmea" 
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN]}>
+                  <Layout><FMEA /></Layout>
+                </ProtectedRoute>
+              } 
+            />
 
-          <Route 
-            path="/simulator" 
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <Simulator />
-                </Layout>
-              </ProtectedRoute>
-            } 
-          />
+            {/* Simulador - Root, Backoffice, Admin, Gerente */}
+            <Route 
+              path="/simulator" 
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]}>
+                  <Layout><Simulator /></Layout>
+                </ProtectedRoute>
+              } 
+            />
 
-          <Route 
-            path="/settings" 
-            element={
-              <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
-                <Layout>
-                  <Settings />
-                </Layout>
-              </ProtectedRoute>
-            } 
-          />
+            {/* Configurações - Root, Backoffice, Admin */}
+            <Route 
+              path="/settings" 
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN]}>
+                  <Layout><Settings /></Layout>
+                </ProtectedRoute>
+              } 
+            />
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Router>
-    </DataProvider>
-  </AuthProvider>
+            {/* Backoffice - APENAS Root e Backoffice (Suporte) */}
+            <Route 
+              path="/backoffice" 
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE]}>
+                  <BackofficeLayout><Backoffice /></BackofficeLayout>
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* Usuário (nível mais baixo) cai direto nas O.S. */}
+            <Route path="*" element={<Navigate to="/work-orders" replace />} />
+          </Routes>
+        </Router>
+      </DataProvider>
+    </AuthProvider>
   );
 }
 

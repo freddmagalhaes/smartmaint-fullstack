@@ -14,7 +14,8 @@ import {
   Calculator,
   ShieldCheck,
   Building2,
-  ClipboardList
+  ClipboardList,
+  ArrowLeft
 } from 'lucide-react';
 import logo from '../assets/logo.png';
 
@@ -30,13 +31,13 @@ const Layout = ({ children }) => {
   };
 
   const navItems = [
-    { label: 'Dashboard', path: '/', icon: LayoutDashboard, roles: [ROLES.OWNER, ROLES.ADMIN, ROLES.USER] },
-    { label: 'Ordens de Serviço', path: '/work-orders', icon: ClipboardList, roles: [ROLES.OWNER, ROLES.ADMIN, ROLES.USER] },
-    { label: 'Equipamentos', path: '/equipments', icon: Cpu, roles: [ROLES.OWNER, ROLES.ADMIN, ROLES.USER] },
-    { label: 'Falhas & Reparos', path: '/failures', icon: AlertTriangle, roles: [ROLES.OWNER, ROLES.ADMIN, ROLES.USER] },
-    { label: 'Análise FMEA', path: '/fmea', icon: Activity, roles: [ROLES.OWNER, ROLES.ADMIN] },
-    { label: 'Simulador R(t)', path: '/simulator', icon: Calculator, roles: [ROLES.OWNER, ROLES.ADMIN, ROLES.USER] },
-    { label: 'Configurações', path: '/settings', icon: Settings, roles: [ROLES.OWNER, ROLES.ADMIN] },
+    { label: 'Dashboard', path: '/', icon: LayoutDashboard, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER] },
+    { label: 'Ordens de Serviço', path: '/work-orders', icon: ClipboardList, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER, ROLES.USER] },
+    { label: 'Equipamentos', path: '/equipments', icon: Cpu, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER] },
+    { label: 'Falhas & Reparos', path: '/failures', icon: AlertTriangle, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER] },
+    { label: 'Análise FMEA', path: '/fmea', icon: Activity, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN] },
+    { label: 'Simulador R(t)', path: '/simulator', icon: Calculator, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER] },
+    { label: 'Configurações', path: '/settings', icon: Settings, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN] },
   ];
 
   return (
@@ -77,6 +78,23 @@ const Layout = ({ children }) => {
               </Link>
             );
           })}
+
+          {/* Link para Backoffice - Root e Suporte */}
+          {(user?.isMaster || user?.role === 'Suporte') && (
+            <Link 
+              to="/backoffice" 
+              style={{
+                ...styles.navItem,
+                background: 'rgba(245, 158, 11, 0.15)',
+                justifyContent: isSidebarOpen ? 'flex-start' : 'center',
+                marginTop: '16px',
+                border: '1px solid rgba(245, 158, 11, 0.2)',
+              }}
+            >
+              <ShieldCheck size={20} color="#f59e0b" />
+              {isSidebarOpen && <span style={{...styles.navLabel, color: '#f59e0b', fontWeight: '600'}}>Painel Backoffice</span>}
+            </Link>
+          )}
         </nav>
 
         <div style={styles.sidebarFooter}>
@@ -93,6 +111,17 @@ const Layout = ({ children }) => {
 
       {/* Main Content */}
       <main style={styles.main}>
+        {/* Banner de Impersonação */}
+        {user?.isMaster && activeTenant && (
+          <div style={styles.impersonationBanner}>
+            <ShieldCheck size={16} />
+            <span>Visualizando dados de: <strong>{Array.isArray(tenants) ? tenants.find(t => t.id === activeTenant)?.name : activeTenant}</strong></span>
+            <Link to="/backoffice" style={styles.backofficeLink}>
+              <ArrowLeft size={14} /> Voltar ao Backoffice
+            </Link>
+          </div>
+        )}
+
         <header style={styles.header}>
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} style={styles.toggleBtn}>
             {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
@@ -281,6 +310,29 @@ const styles = {
     flex: 1,
     overflowY: 'auto',
     padding: '32px',
+  },
+  impersonationBanner: {
+    background: 'linear-gradient(90deg, #1e3a8a, #3b82f6)',
+    color: 'white',
+    padding: '8px 24px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    fontSize: '13px',
+    fontWeight: '500',
+  },
+  backofficeLink: {
+    marginLeft: 'auto',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    color: 'white',
+    textDecoration: 'none',
+    fontWeight: '600',
+    background: 'rgba(255,255,255,0.15)',
+    padding: '4px 12px',
+    borderRadius: '6px',
+    fontSize: '12px',
   }
 };
 
