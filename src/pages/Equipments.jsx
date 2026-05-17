@@ -10,6 +10,7 @@ const Equipments = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
   
   // Estado do formulário
   const [formData, setFormData] = useState({
@@ -42,6 +43,35 @@ const Equipments = () => {
     setEditingId(eq.id);
     setFormData({ ...eq });
     setIsModalOpen(true);
+  };
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const formDataObj = new FormData();
+    formDataObj.append('file', file);
+
+    try {
+      const tokenLocal = localStorage.getItem('token');
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${tokenLocal}` },
+        body: formDataObj
+      });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        // Assume API server is running on localhost:3001 in dev
+        setFormData(prev => ({ ...prev, image: 'http://localhost:3001' + data.url }));
+      } else {
+        alert(data.error || 'Erro no upload da imagem');
+      }
+    } catch {
+      alert('Falha na comunicação ao enviar imagem');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleSubmit = (e) => {
@@ -185,6 +215,20 @@ const Equipments = () => {
                     value={formData.name}
                     onChange={(e) => setFormData({...formData, name: e.target.value})}
                   />
+                </div>
+                <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
+                  <label style={styles.label}>Foto do Equipamento</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <img src={formData.image} alt="Preview" style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                    <input 
+                      type="file" 
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      disabled={isUploading}
+                      style={{ fontSize: '13px' }}
+                    />
+                    {isUploading && <span style={{ fontSize: '13px', color: 'var(--primary)' }}>Enviando...</span>}
+                  </div>
                 </div>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Tipo</label>

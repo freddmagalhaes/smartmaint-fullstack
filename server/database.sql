@@ -14,6 +14,7 @@ CREATE TABLE tenants (
     contrato_fim DATE,
     renovacao_auto BOOLEAN DEFAULT TRUE,
     valor_mensal DECIMAL(10,2) DEFAULT 0,
+    stripe_customer_id VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -38,6 +39,8 @@ CREATE TABLE users (
     password VARCHAR(255) NOT NULL,
     role ENUM('Dono', 'Administrador', 'Usuário') NOT NULL,
     is_master BOOLEAN DEFAULT FALSE,
+    reset_token VARCHAR(255),
+    reset_token_expiry DATETIME,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE SET NULL
 );

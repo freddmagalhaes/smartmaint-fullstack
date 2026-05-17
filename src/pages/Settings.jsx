@@ -13,6 +13,7 @@ const Settings = () => {
   const [activeTab, setActiveTab] = useState(hasRole([ROLES.ROOT, ROLES.ADMIN]) ? 'company' : 'profile');
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
+  const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
   
   // Dados do contrato do tenant ativo
   const currentTenant = Array.isArray(tenants) ? tenants.find(t => t.id === activeTenant) : null;
@@ -50,6 +51,30 @@ const Settings = () => {
       addUser(userFormData);
     }
     setIsUserModalOpen(false);
+  };
+
+  const handleCheckout = async () => {
+    setIsCheckoutLoading(true);
+    try {
+      const tokenLocal = localStorage.getItem('token');
+      const res = await fetch('/api/billing/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${tokenLocal}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+      } else {
+        alert(data.error || 'Erro ao gerar fatura');
+      }
+    } catch {
+      alert('Erro de comunicação.');
+    } finally {
+      setIsCheckoutLoading(false);
+    }
   };
 
   return (
@@ -274,15 +299,25 @@ const Settings = () => {
               <div style={styles.billingCard}>
                 <div style={styles.billingHeader}>
                   <div>
-                    <h4 style={styles.planTitle}>Plano Enterprise Industrial</h4>
-                    <p style={styles.planDesc}>Ativos ilimitados • 15 usuários • Suporte 24/7</p>
+                    <h4 style={styles.planTitle}>Plano {currentTenant?.plan_type || 'Pro'}</h4>
+                    <p style={styles.planDesc}>Acesso completo ao SmartMaint</p>
                   </div>
-                  <div style={styles.planStatus}>Ativo</div>
+                  <div style={styles.planStatus}>{currentTenant?.status || 'Ativo'}</div>
                 </div>
-                <button style={styles.billingBtn}>
-                  Ver Notas Fiscais
-                  <ExternalLink size={16} />
-                </button>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button 
+                    className="btn-primary" 
+                    onClick={handleCheckout} 
+                    disabled={isCheckoutLoading}
+                    style={{ flex: 1, justifyContent: 'center' }}
+                  >
+                    {isCheckoutLoading ? 'Gerando Pagamento...' : 'Pagar Fatura / Renovar'}
+                  </button>
+                  <button style={{...styles.billingBtn, flex: 1, justifyContent: 'center', background: 'white', border: '1px solid var(--border)', borderRadius: '8px'}}>
+                    Ver Notas Fiscais
+                    <ExternalLink size={16} />
+                  </button>
+                </div>
               </div>
             </div>
           )}

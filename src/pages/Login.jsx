@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { LogIn, Mail, Lock, Loader2, Info } from 'lucide-react';
+import { LogIn, Mail, Lock, Loader2, Info, X } from 'lucide-react';
 import logo from '../assets/logo.png';
 
 const Login = () => {
@@ -9,6 +9,10 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotMessage, setForgotMessage] = useState('');
+  const [isForgotLoading, setIsForgotLoading] = useState(false);
   
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -41,6 +45,25 @@ const Login = () => {
       setError('Erro de comunicação com o servidor.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setIsForgotLoading(true);
+    setForgotMessage('');
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail })
+      });
+      const data = await res.json();
+      setForgotMessage(data.message || 'Se o e-mail existir, um link foi enviado.');
+    } catch {
+      setForgotMessage('Erro ao tentar redefinir a senha.');
+    } finally {
+      setIsForgotLoading(false);
     }
   };
 
@@ -96,6 +119,15 @@ const Login = () => {
                 required
               />
             </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <button 
+                type="button" 
+                style={styles.forgotBtn}
+                onClick={() => setIsForgotModalOpen(true)}
+              >
+                Esqueci minha senha
+              </button>
+            </div>
           </div>
 
           <button 
@@ -122,6 +154,57 @@ const Login = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal Esqueci a Senha */}
+      {isForgotModalOpen && (
+        <div style={styles.modalOverlay}>
+          <div className="premium-card fade-in" style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>Recuperar Senha</h3>
+              <button onClick={() => setIsForgotModalOpen(false)} style={styles.closeBtn}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            {forgotMessage ? (
+              <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                <p style={{ color: 'var(--success)', fontWeight: '500' }}>{forgotMessage}</p>
+                <button onClick={() => setIsForgotModalOpen(false)} className="btn-primary" style={{ marginTop: '20px', width: '100%' }}>
+                  Voltar ao Login
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotPassword} style={styles.form}>
+                <p style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
+                  Digite o e-mail associado à sua conta. Se ele existir em nossa base, enviaremos um link de redefinição.
+                </p>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>E-mail</label>
+                  <div style={styles.inputWrapper}>
+                    <Mail size={18} style={styles.inputIcon} />
+                    <input
+                      type="email"
+                      placeholder="exemplo@smartmaint.com"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      style={styles.input}
+                      required
+                    />
+                  </div>
+                </div>
+                <button 
+                  type="submit" 
+                  className="btn-primary flex-center" 
+                  style={{ width: '100%', height: '48px', marginTop: '12px' }}
+                  disabled={isForgotLoading}
+                >
+                  {isForgotLoading ? <Loader2 className="animate-spin" size={20} /> : 'Enviar Link de Recuperação'}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -250,6 +333,48 @@ const styles = {
     fontSize: '10px',
     color: 'var(--text-muted)',
     opacity: 0.6,
+  },
+  forgotBtn: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--primary)',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    padding: '4px',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0, left: 0, right: 0, bottom: 0,
+    background: 'rgba(0,0,0,0.4)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  modal: {
+    width: '100%',
+    maxWidth: '450px',
+    padding: '32px',
+    background: 'white',
+    borderRadius: '16px',
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '20px',
+  },
+  modalTitle: {
+    fontSize: '20px',
+    fontWeight: '700',
+    color: 'var(--text-main)',
+  },
+  closeBtn: {
+    background: 'transparent',
+    border: 'none',
+    color: 'var(--text-muted)',
+    cursor: 'pointer',
   }
 };
 

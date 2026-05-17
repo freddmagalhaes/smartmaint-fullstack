@@ -14,6 +14,7 @@ import WorkOrders from './pages/WorkOrders';
 import PreventiveMaintenance from './pages/PreventiveMaintenance';
 import Inventory from './pages/Inventory';
 import Settings from './pages/Settings';
+import ResetPassword from './pages/ResetPassword';
 import Layout from './components/Layout';
 import BackofficeLayout from './components/BackofficeLayout';
 import Backoffice from './pages/Backoffice';
@@ -26,6 +27,7 @@ function App() {
           <Toaster position="top-right" richColors />
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             
             {/* Dashboard - Root, Backoffice, Admin, Gerente */}
             <Route 
