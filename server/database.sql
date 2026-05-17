@@ -114,6 +114,35 @@ CREATE TABLE work_orders (
     FOREIGN KEY (equipment_id) REFERENCES equipments(id) ON DELETE CASCADE
 );
 
+-- Tabela de Estoque / Peças
+CREATE TABLE inventory (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id VARCHAR(50) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    sku VARCHAR(100),
+    quantity INT DEFAULT 0,
+    min_quantity INT DEFAULT 5,
+    unit_price DECIMAL(10,2) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+-- Tabela de Planos Preventivos
+CREATE TABLE preventive_plans (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id VARCHAR(50) NOT NULL,
+    equipment_id INT NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    interval_days INT NOT NULL,
+    last_executed DATE,
+    next_due DATE,
+    status ENUM('Ativo', 'Pausado') DEFAULT 'Ativo',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (equipment_id) REFERENCES equipments(id) ON DELETE CASCADE
+);
+
 -- Inserção de Dados Iniciais (Seed)
 INSERT INTO tenants (id, name) VALUES ('delp', 'DELP Engenharia'), ('stellantis', 'Stellantis');
 

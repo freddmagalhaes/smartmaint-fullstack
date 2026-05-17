@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { 
-  ClipboardList, Plus, Search, Filter, 
-  Clock, AlertCircle, CheckCircle2, MoreVertical,
+  Plus, Search, 
+  AlertCircle, Printer,
   User, Cpu, Tag, Calendar, X, Edit2, Trash2
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 
 const WorkOrders = () => {
-  const { activeTenant } = useAuth();
   const { equipments, workOrders, users, addWorkOrder, updateWorkOrder, deleteWorkOrder } = useData();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -75,6 +73,65 @@ const WorkOrders = () => {
     updateWorkOrder(id, { status: newStatus });
   };
 
+  const handlePrint = (os) => {
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Ordem de Serviço #${os.id}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 40px; color: #333; }
+            .header { border-bottom: 2px solid #1e3a8a; padding-bottom: 20px; margin-bottom: 30px; }
+            h1 { color: #1e3a8a; margin: 0 0 10px 0; }
+            .meta { display: flex; justify-content: space-between; margin-bottom: 30px; }
+            .box { border: 1px solid #ccc; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+            .box h3 { margin-top: 0; color: #1e3a8a; }
+            .footer { margin-top: 50px; text-align: center; }
+            .signature { margin-top: 60px; border-top: 1px solid #333; width: 300px; padding-top: 10px; display: inline-block; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Ordem de Serviço #${os.id}</h1>
+            <p><strong>Status:</strong> ${os.status} | <strong>Prioridade:</strong> ${os.prioridade}</p>
+          </div>
+          <div class="meta">
+            <div><strong>Data de Abertura:</strong> ${new Date(os.data_criacao).toLocaleDateString('pt-BR')}</div>
+            <div><strong>Responsável:</strong> ${os.responsavel}</div>
+          </div>
+          <div class="box">
+            <h3>Detalhes da Manutenção</h3>
+            <p><strong>Equipamento:</strong> ${getEquipmentName(os.equipment_id)}</p>
+            <p><strong>Tipo de Manutenção:</strong> ${os.tipo}</p>
+            <p><strong>Título / Descrição:</strong> ${os.titulo}</p>
+          </div>
+          <div class="box">
+            <h3>Peças / Materiais Utilizados</h3>
+            <p><br/><br/></p>
+          </div>
+          <div class="box">
+            <h3>Observações Técnicas</h3>
+            <p><br/><br/><br/></p>
+          </div>
+          <div class="footer">
+            <div class="signature">
+              Assinatura do Técnico (${os.responsavel})
+            </div>
+            <div class="signature" style="margin-left: 50px;">
+              Assinatura do Cliente / Supervisor
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 500);
+  };
+
   return (
     <div className="fade-in">
       <header style={styles.header}>
@@ -114,6 +171,7 @@ const WorkOrders = () => {
                 {os.status}
               </div>
               <div style={{ display: 'flex', gap: '4px' }}>
+                <button title="Imprimir O.S." style={styles.iconBtn} onClick={() => handlePrint(os)}><Printer size={14} /></button>
                 <button style={styles.iconBtn} onClick={() => handleOpenEdit(os)}><Edit2 size={14} /></button>
                 <button style={styles.iconBtn} onClick={() => deleteWorkOrder(os.id)}><Trash2 size={14} color="var(--danger)" /></button>
               </div>

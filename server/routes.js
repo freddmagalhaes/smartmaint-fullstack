@@ -420,4 +420,93 @@ router.post('/users', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// --- INVENTORY (Estoque) ---
+router.get('/inventory', async (req, res) => {
+  const tenant_id = getTenantId(req);
+  try {
+    const rows = await query('SELECT * FROM inventory WHERE tenant_id = ?', [tenant_id]);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/inventory', async (req, res) => {
+  const tenant_id = getTenantId(req);
+  const { name, sku, quantity, min_quantity, unit_price } = req.body;
+  try {
+    const result = await query(
+      'INSERT INTO inventory (tenant_id, name, sku, quantity, min_quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?)',
+      [tenant_id, name, sku, quantity, min_quantity, unit_price]
+    );
+    res.json({ id: result.insertId, ...req.body, tenant_id });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/inventory/:id', async (req, res) => {
+  const tenant_id = getTenantId(req);
+  const { name, sku, quantity, min_quantity, unit_price } = req.body;
+  try {
+    await query(
+      'UPDATE inventory SET name=COALESCE(?, name), sku=COALESCE(?, sku), quantity=COALESCE(?, quantity), min_quantity=COALESCE(?, min_quantity), unit_price=COALESCE(?, unit_price) WHERE id=? AND tenant_id=?',
+      [name, sku, quantity, min_quantity, unit_price, req.params.id, tenant_id]
+    );
+    res.json({ message: 'Item atualizado' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/inventory/:id', async (req, res) => {
+  const tenant_id = getTenantId(req);
+  try {
+    await query('DELETE FROM inventory WHERE id = ? AND tenant_id = ?', [req.params.id, tenant_id]);
+    res.json({ message: 'Excluído com sucesso' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// --- PREVENTIVE PLANS (Planos Preventivos) ---
+router.get('/preventive-plans', async (req, res) => {
+  const tenant_id = getTenantId(req);
+  try {
+    const rows = await query('SELECT p.*, e.name as equipment_name FROM preventive_plans p JOIN equipments e ON p.equipment_id = e.id WHERE p.tenant_id = ?', [tenant_id]);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/preventive-plans', async (req, res) => {
+  const tenant_id = getTenantId(req);
+  const { equipment_id, title, description, interval_days, status } = req.body;
+  try {
+    const result = await query(
+      'INSERT INTO preventive_plans (tenant_id, equipment_id, title, description, interval_days, next_due, status) VALUES (?, ?, ?, ?, ?, DATE_ADD(CURRENT_DATE, INTERVAL ? DAY), ?)',
+      [tenant_id, equipment_id, title, description, interval_days, interval_days, status || 'Ativo']
+    );
+    res.json({ id: result.insertId, ...req.body, tenant_id });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/preventive-plans/:id', async (req, res) => {
+  const tenant_id = getTenantId(req);
+  const { title, description, interval_days, status, reset_due } = req.body;
+  try {
+    if (reset_due) {
+      await query(
+        'UPDATE preventive_plans SET title=COALESCE(?, title), description=COALESCE(?, description), interval_days=COALESCE(?, interval_days), status=COALESCE(?, status), last_executed=CURRENT_DATE, next_due=DATE_ADD(CURRENT_DATE, INTERVAL interval_days DAY) WHERE id=? AND tenant_id=?',
+        [title, description, interval_days, status, req.params.id, tenant_id]
+      );
+    } else {
+      await query(
+        'UPDATE preventive_plans SET title=COALESCE(?, title), description=COALESCE(?, description), interval_days=COALESCE(?, interval_days), status=COALESCE(?, status) WHERE id=? AND tenant_id=?',
+        [title, description, interval_days, status, req.params.id, tenant_id]
+      );
+    }
+    res.json({ message: 'Plano atualizado' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/preventive-plans/:id', async (req, res) => {
+  const tenant_id = getTenantId(req);
+  try {
+    await query('DELETE FROM preventive_plans WHERE id = ? AND tenant_id = ?', [req.params.id, tenant_id]);
+    res.json({ message: 'Excluído com sucesso' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

@@ -1,18 +1,16 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { 
-  LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie
 } from 'recharts';
 import { 
-  TrendingUp, TrendingDown, Clock, Activity, AlertCircle, ShieldCheck, Zap, ClipboardList, CheckCircle2
+  TrendingUp, TrendingDown, Clock, Activity, Zap, ClipboardList
 } from 'lucide-react';
 import { 
   calculateLambda, calculateMTBF, calculateMTTR, calculateAvailability, formatPercent, formatHours 
 } from '../utils/formulas';
-import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 
 const Dashboard = () => {
-  const { activeTenant } = useAuth();
   const { equipments, failures, repairs, workOrders } = useData();
 
   // Cálculos Globais baseados no tenant
@@ -56,27 +54,6 @@ const Dashboard = () => {
     { name: 'Mai', falhas: 1, disponibilidade: 98.9 },
     { name: 'Jun', falhas: 0, disponibilidade: 99.2 },
   ];
-
-  const StatCard = ({ title, value, icon: Icon, trend, color, subtitle }) => (
-    <div className="premium-card" style={styles.card}>
-      <div style={styles.cardHeader}>
-        <div style={{ ...styles.iconContainer, background: `${color}15` }}>
-          <Icon size={20} color={color} />
-        </div>
-        {trend && (
-          <div style={{ ...styles.trend, color: trend > 0 ? 'var(--success)' : 'var(--danger)' }}>
-            {trend > 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-            {Math.abs(trend)}%
-          </div>
-        )}
-      </div>
-      <div style={styles.cardContent}>
-        <p style={styles.cardTitle}>{title}</p>
-        <h2 style={styles.cardValue}>{value}</h2>
-        <p style={styles.cardSubtitle}>{subtitle}</p>
-      </div>
-    </div>
-  );
 
   return (
     <div className="fade-in">
@@ -239,5 +216,26 @@ const styles = {
   legendDot: { width: '10px', height: '10px', borderRadius: '50%' },
   legendLabel: { fontSize: '13px', color: 'var(--text-muted)' }
 };
+
+const StatCard = ({ title, value, icon: Icon, trend, color, subtitle }) => (
+  <div className="premium-card" style={styles.card}>
+    <div style={styles.cardHeader}>
+      <div style={{ ...styles.iconContainer, background: `${color}15` }}>
+        <Icon size={20} color={color} />
+      </div>
+      {trend && (
+        <div style={{ ...styles.trend, color: trend > 0 ? 'var(--success)' : 'var(--danger)' }}>
+          {trend > 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+          {Math.abs(trend)}%
+        </div>
+      )}
+    </div>
+    <div style={styles.cardContent}>
+      <p style={styles.cardTitle}>{title}</p>
+      <h2 style={styles.cardValue}>{value}</h2>
+      <p style={styles.cardSubtitle}>{subtitle}</p>
+    </div>
+  </div>
+);
 
 export default Dashboard;

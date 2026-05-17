@@ -1,14 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { 
-  Activity, AlertTriangle, AlertCircle, 
-  ShieldAlert, Info, TrendingUp, Search, Plus, X, Trash2, Edit2
+  Activity, Search, Plus, X, Trash2, Edit2
 } from 'lucide-react';
 import { calculateRPN } from '../utils/formulas';
-import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 
 const FMEA = () => {
-  const { activeTenant } = useAuth();
   const { equipments, fmea, addFmea, updateFmea, deleteFmea } = useData();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);

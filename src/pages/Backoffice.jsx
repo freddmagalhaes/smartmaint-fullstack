@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
 import { 
-  Building2, Users, CreditCard, Activity, Plus,
+  Building2, Users, CreditCard, Plus,
   CheckCircle2, XCircle, ExternalLink, RefreshCw, X, Trash2, DollarSign, FileText
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -34,6 +34,7 @@ const Backoffice = () => {
     finally { setLoading(false); }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchAll(); }, [token]);
 
   const toggleStatus = async (id, cur) => {

@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { 
-  AlertTriangle, Wrench, Clock, Filter, 
-  Search, ArrowRight, CheckCircle2, History, X, Trash2, Edit2
+  AlertTriangle, Wrench, Clock, 
+  Search, CheckCircle2, X, Trash2, Edit2
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 
 const Failures = () => {
-  const { activeTenant } = useAuth();
   const { equipments, failures, repairs, addFailure, updateFailure, deleteFailure } = useData();
   const [activeTab, setActiveTab] = useState('failures');
   const [isModalOpen, setIsModalOpen] = useState(false);

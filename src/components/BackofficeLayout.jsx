@@ -1,12 +1,10 @@
-import React from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { ShieldCheck, LogOut, ArrowLeft, Users, CreditCard, Activity } from 'lucide-react';
+import { ShieldCheck, LogOut, ArrowLeft } from 'lucide-react';
 
 const BackofficeLayout = ({ children }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
 
   const handleLogout = () => {
     logout();

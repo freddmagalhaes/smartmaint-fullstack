@@ -1,16 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { 
-  Calculator, Info, Clock, ShieldCheck, 
-  TrendingUp, Activity, HelpCircle 
+  Info, TrendingUp, TrendingDown, Activity 
 } from 'lucide-react';
 import { 
-  calculateLambda, calculateReliability, formatPercent, formatHours 
+  calculateLambda, calculateReliability, formatPercent 
 } from '../utils/formulas';
-import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 
 const Simulator = () => {
-  const { activeTenant } = useAuth();
   const { equipments, failures } = useData();
   
   const [selectedEquipId, setSelectedEquipId] = useState(equipments[0]?.id);

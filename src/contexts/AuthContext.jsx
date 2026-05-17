@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 
 const AuthContext = createContext();
@@ -18,7 +18,7 @@ export const AuthProvider = ({ children }) => {
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchTenants = async (authToken) => {
+  const fetchTenants = useCallback(async (authToken) => {
     try {
       const res = await fetch('/api/tenants', {
         headers: {
@@ -32,7 +32,7 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error('Erro ao buscar unidades:', error);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('sm_user');
@@ -47,7 +47,7 @@ export const AuthProvider = ({ children }) => {
       fetchTenants(savedToken);
     }
     setLoading(false);
-  }, []);
+  }, [fetchTenants]);
 
   const login = async (email, password) => {
     try {

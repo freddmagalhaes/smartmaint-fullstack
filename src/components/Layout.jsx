@@ -15,7 +15,9 @@ import {
   ShieldCheck,
   Building2,
   ClipboardList,
-  ArrowLeft
+  ArrowLeft,
+  Package,
+  CalendarCheck
 } from 'lucide-react';
 import logo from '../assets/logo.png';
 
@@ -37,6 +39,8 @@ const Layout = ({ children }) => {
     { label: 'Falhas & Reparos', path: '/failures', icon: AlertTriangle, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER] },
     { label: 'Análise FMEA', path: '/fmea', icon: Activity, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN] },
     { label: 'Simulador R(t)', path: '/simulator', icon: Calculator, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER] },
+    { label: 'Planos Preventivos', path: '/preventive', icon: CalendarCheck, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER] },
+    { label: 'Gestão de Estoque', path: '/inventory', icon: Package, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER] },
     { label: 'Configurações', path: '/settings', icon: Settings, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN] },
   ];
 

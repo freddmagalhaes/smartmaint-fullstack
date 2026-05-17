@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, Mail, Lock, Loader2, Info } from 'lucide-react';
@@ -37,7 +37,7 @@ const Login = () => {
       if (success) {
         navigate('/');
       }
-    } catch (err) {
+    } catch {
       setError('Erro de comunicação com o servidor.');
     } finally {
       setIsLoading(false);

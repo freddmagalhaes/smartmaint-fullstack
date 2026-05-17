@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, ROLES } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
@@ -11,6 +11,8 @@ import Failures from './pages/Failures';
 import Simulator from './pages/Simulator';
 import FMEA from './pages/FMEA';
 import WorkOrders from './pages/WorkOrders';
+import PreventiveMaintenance from './pages/PreventiveMaintenance';
+import Inventory from './pages/Inventory';
 import Settings from './pages/Settings';
 import Layout from './components/Layout';
 import BackofficeLayout from './components/BackofficeLayout';
@@ -51,6 +53,26 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]}>
                   <Layout><Equipments /></Layout>
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* Planos Preventivos - Root, Backoffice, Admin, Gerente */}
+            <Route 
+              path="/preventive" 
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]}>
+                  <Layout><PreventiveMaintenance /></Layout>
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* Estoque / Inventário - Root, Backoffice, Admin, Gerente */}
+            <Route 
+              path="/inventory" 
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]}>
+                  <Layout><Inventory /></Layout>
                 </ProtectedRoute>
               } 
             />

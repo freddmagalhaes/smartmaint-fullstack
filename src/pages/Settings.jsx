@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { 
   Building2, Users, UserCircle, Shield, 
-  CreditCard, Bell, Save, Plus, Trash2, Edit2,
-  Mail, ShieldCheck, ExternalLink, X, FileText, CalendarDays, RefreshCw, CheckCircle2
+  CreditCard, Save, Plus, Trash2, Edit2,
+  ExternalLink, X, FileText, CalendarDays, RefreshCw, CheckCircle2
 } from 'lucide-react';
 import { useAuth, ROLES } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 
 const Settings = () => {
-  const { user, token, activeTenant, tenants, hasRole } = useAuth();
+  const { user, activeTenant, tenants, hasRole } = useAuth();
   const { users, addUser, updateUser, deleteUser } = useData();
   const [activeTab, setActiveTab] = useState(hasRole([ROLES.ROOT, ROLES.ADMIN]) ? 'company' : 'profile');
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -51,13 +51,6 @@ const Settings = () => {
     }
     setIsUserModalOpen(false);
   };
-
-  const SectionHeader = ({ title, description }) => (
-    <div style={styles.sectionHeader}>
-      <h3 style={styles.sectionTitle}>{title}</h3>
-      <p style={styles.sectionDesc}>{description}</p>
-    </div>
-  );
 
   return (
     <div className="fade-in">
@@ -405,5 +398,12 @@ const styles = {
   modalFooter: { display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid var(--border)', paddingTop: '20px', marginTop: '20px' },
   cancelBtn: { background: 'transparent', color: 'var(--text-muted)', fontWeight: '600', cursor: 'pointer' }
 };
+
+const SectionHeader = ({ title, description }) => (
+  <div style={styles.sectionHeader}>
+    <h3 style={styles.sectionTitle}>{title}</h3>
+    <p style={styles.sectionDesc}>{description}</p>
+  </div>
+);
 
 export default Settings;

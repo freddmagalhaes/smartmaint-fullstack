@@ -5,12 +5,23 @@ SmartMaint é uma plataforma moderna e intuitiva para o gerenciamento de ativos,
 ## 🚀 Funcionalidades Principais
 
 - **📊 Dashboard Estratégico:** Visualização de indicadores em tempo real.
-- **📋 Ordens de Serviço:** Gestão completa do ciclo de vida das O.S.
+- **📋 Ordens de Serviço:** Gestão completa do ciclo de vida das O.S. com exportação para PDF.
 - **⚙️ Gestão de Ativos:** Cadastro e monitoramento de equipamentos por unidade (Tenant).
+- **📅 Planos Preventivos:** Agendamento e controle de manutenções recorrentes.
+- **📦 Gestão de Estoque:** Controle de peças e materiais para manutenções.
 - **⚠️ Registro de Falhas:** Histórico detalhado de quebras e reparos.
 - **🔍 Análise FMEA:** Identificação de modos de falha, efeitos e criticidade.
 - **📈 Simulador R(t):** Cálculo de confiabilidade e tempo médio entre falhas (MTBF/MTTR).
 - **🏢 Multi-Tenant:** Suporte a múltiplas empresas ou unidades fabris com isolamento de dados.
+
+## 🛡️ Segurança e Boas Práticas
+
+Durante a auditoria de código, o SmartMaint foi configurado com as seguintes diretrizes de segurança:
+- **Prevenção contra SQL Injection:** Utilização estrita de *queries parametrizadas* com o pacote `mysql2`.
+- **Criptografia de Senhas:** Hashes seguros gerados através da biblioteca `bcrypt`.
+- **Autenticação:** Proteção de rotas baseada em roles com JSON Web Tokens (JWT).
+- **Isolamento Multi-Tenant:** Filtro obrigatório de `tenant_id` em consultas operacionais para prevenir vazamento de dados entre empresas.
+- **Dica de Produção:** Lembre-se de configurar a variável de ambiente `JWT_SECRET` com uma chave forte e avaliar a implementação de `express-rate-limit` nas rotas de login para prevenir força bruta.
 
 ## 🛠️ Tecnologias Utilizadas
 

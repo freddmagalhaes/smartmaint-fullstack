@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { 
-  Plus, Search, Filter, MoreVertical, Cpu, 
+  Plus, Search, 
   Calendar, Hash, Tag, Activity, X, Trash2, Edit2
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 
 const Equipments = () => {
-  const { activeTenant } = useAuth();
   const { equipments, addEquipment, updateEquipment, deleteEquipment } = useData();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -56,7 +54,7 @@ const Equipments = () => {
     setIsModalOpen(false);
   };
 
-  const getStatusColor = (id) => {
+  const getStatusColor = () => {
     return 'var(--success)';
   };
 
@@ -143,10 +141,10 @@ const Equipments = () => {
                 <td style={styles.td}>
                   <div style={{
                     ...styles.statusBadge,
-                    background: `${getStatusColor(eq.id)}15`,
-                    color: getStatusColor(eq.id),
+                    background: `${getStatusColor()}15`,
+                    color: getStatusColor(),
                   }}>
-                    <div style={{ ...styles.statusDot, background: getStatusColor(eq.id) }}></div>
+                    <div style={{ ...styles.statusDot, background: getStatusColor() }}></div>
                     Operacional
                   </div>
                 </td>
