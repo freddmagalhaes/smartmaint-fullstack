@@ -62,8 +62,7 @@ const Equipments = () => {
       });
       const data = await res.json();
       if (res.ok && data.url) {
-        // Assume API server is running on localhost:3001 in dev
-        setFormData(prev => ({ ...prev, image: 'http://localhost:3001' + data.url }));
+        setFormData(prev => ({ ...prev, image: data.url }));
       } else {
         alert(data.error || 'Erro no upload da imagem');
       }

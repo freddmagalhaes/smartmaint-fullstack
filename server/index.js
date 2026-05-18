@@ -28,9 +28,12 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Rotas da API
 app.use('/api', routes);
 
-// Rota inicial para evitar "Cannot GET /"
-app.get('/', (req, res) => {
-  res.send('🚀 Backend do SmartMaint está rodando! Acesse o frontend na porta 5173.');
+// Servir frontend (arquivos de build do React)
+app.use(express.static(path.join(__dirname, '../dist')));
+
+// Qualquer outra rota não tratada pelas rotas /api cai no React Router (SPA)
+app.use((req, res) => {
+  res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
 // Rota de Teste de Conexão
