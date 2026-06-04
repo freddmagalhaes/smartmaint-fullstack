@@ -123,7 +123,11 @@ const Login = () => {
               <button 
                 type="button" 
                 style={styles.forgotBtn}
-                onClick={() => setIsForgotModalOpen(true)}
+                onClick={() => {
+                  setForgotEmail('');
+                  setForgotMessage('');
+                  setIsForgotModalOpen(true);
+                }}
               >
                 Esqueci minha senha
               </button>
