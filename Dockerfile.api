@@ -1,0 +1,18 @@
+# Usa o Node 20 para o backend
+FROM node:20-alpine
+WORKDIR /app
+
+# Copia apenas os ficheiros de dependência do backend
+COPY server/package*.json ./
+
+# Instala as dependências (agora a pasta server existe isolada)
+RUN npm install
+
+# Copia o resto do código da pasta server
+COPY server/ .
+
+# Expõe a porta interna que o seu backend usa (estou assumindo a 3000)
+EXPOSE 3000
+
+# Inicia o servidor Node.js (Ajuste se o seu comando no package.json for diferente, ex: "node server.js")
+CMD ["npm", "start"]
