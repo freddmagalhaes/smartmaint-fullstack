@@ -1,0 +1,94 @@
+name: Deploy (ambiente)
+
+# Etapa reutilizada pelo deploy.yml: envia a imagem já construída para o ECR do ambiente e
+# atualiza o serviço no ECS. Sem chaves de acesso: o GitHub assume o papel de deploy via OIDC.
+#
+# Variáveis do environment no GitHub (Settings > Environments > staging/production), todas
+# vindas de "terraform output":
+#   AWS_REGION, AWS_DEPLOY_ROLE_ARN, ECR_REPOSITORY_URL, ECS_CLUSTER, ECS_SERVICE,
+#   ECS_TASK_FAMILY, CONTAINER_NAME, APP_URL
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      tag:
+        type: string
+        required: true
+
+jobs:
+  deploy:
+    name: Publicar
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.APP_URL }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      IMAGE: ${{ vars.ECR_REPOSITORY_URL }}:${{ inputs.tag }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: image
+          path: ${{ runner.temp }}
+
+      # As tags do ECR são imutáveis: se esta versão já foi enviada (deploy repetido), reaproveita
+      - name: Enviar imagem ao ECR
+        run: |
+          repo="${ECR_REPOSITORY_URL#*/}"
+          if aws ecr describe-images --repository-name "$repo" --image-ids imageTag="$TAG" >/dev/null 2>&1; then
+            echo "Imagem $TAG já existe no ECR; reaproveitando."
+          else
+            docker load --input "$RUNNER_TEMP/image.tar"
+            docker tag "smartmaint:$TAG" "$IMAGE"
+            docker push "$IMAGE"
+          fi
+        env:
+          ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
+          TAG: ${{ inputs.tag }}
+
+      # Parte da última definição registrada (inclui mudanças de configuração feitas pelo Terraform)
+      - name: Ler definição da tarefa
+        run: |
+          aws ecs describe-task-definition --task-definition "${{ vars.ECS_TASK_FAMILY }}" --query taskDefinition \
+            | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+            > "$RUNNER_TEMP/task-definition.json"
+
+      - id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ runner.temp }}/task-definition.json
+          container-name: ${{ vars.CONTAINER_NAME }}
+          image: ${{ env.IMAGE }}
+
+      # Só conclui quando a nova versão estiver saudável; se falhar, o ECS volta para a anterior
+      - uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          cluster: ${{ vars.ECS_CLUSTER }}
+          service: ${{ vars.ECS_SERVICE }}
+          wait-for-service-stability: true
+          wait-for-minutes: 15
+
+      - name: Verificar se o sistema responde
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS "${{ vars.APP_URL }}/api/health"; then echo; exit 0; fi
+            sleep 6
+          done
+          echo "O sistema não respondeu em ${{ vars.APP_URL }}/api/health" >&2
+          exit 1
