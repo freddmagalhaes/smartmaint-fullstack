@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth, isBackofficeUser } from '../contexts/AuthContext';
+import { homePathFor } from '../components/ProtectedRoute';
+import { apiFetch } from '../api/client';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, Mail, Lock, Loader2, Info, X } from 'lucide-react';
 import logo from '../assets/logo.png';
@@ -22,29 +24,12 @@ const Login = () => {
     setError('');
     setIsLoading(true);
 
-    try {
-      // Primeiro, checar diretamente a resposta do servidor para capturar 403
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-
-      if (res.status === 403) {
-        const data = await res.json();
-        setError(data.error || 'Acesso bloqueado. Entre em contato com o suporte.');
-        setIsLoading(false);
-        return;
-      }
-
-      const success = await login(email, password);
-      if (success) {
-        navigate('/');
-      }
-    } catch {
-      setError('Erro de comunicação com o servidor.');
-    } finally {
-      setIsLoading(false);
+    const result = await login(email, password);
+    setIsLoading(false);
+    if (result.ok) {
+      navigate(homePathFor(result.user, isBackofficeUser(result.user), result.user.tenant_id), { replace: true });
+    } else {
+      setError(result.error);
     }
   };
 
@@ -53,15 +38,10 @@ const Login = () => {
     setIsForgotLoading(true);
     setForgotMessage('');
     try {
-      const res = await fetch('/api/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: forgotEmail })
-      });
-      const data = await res.json();
+      const data = await apiFetch('/api/auth/forgot-password', { method: 'POST', body: { email: forgotEmail }, auth: false });
       setForgotMessage(data.message || 'Se o e-mail existir, um link foi enviado.');
-    } catch {
-      setForgotMessage('Erro ao tentar redefinir a senha.');
+    } catch (err) {
+      setForgotMessage(err.message);
     } finally {
       setIsForgotLoading(false);
     }
@@ -97,7 +77,7 @@ const Login = () => {
               <Mail size={18} style={styles.inputIcon} />
               <input
                 type="email"
-                placeholder="exemplo@smartmaint.com"
+                placeholder="voce@suaempresa.com.br"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 style={styles.input}
@@ -153,16 +133,13 @@ const Login = () => {
 
         <div style={styles.footer}>
           <p style={styles.footerText}>Acesso restrito a colaboradores autorizados.</p>
-          <div style={styles.demoCredits}>
-            <p>Dica: 123456 | dono@smartmaint.com</p>
-          </div>
         </div>
       </div>
 
       {/* Modal Esqueci a Senha */}
       {isForgotModalOpen && (
-        <div style={styles.modalOverlay}>
-          <div className="premium-card fade-in" style={styles.modal}>
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>Recuperar Senha</h3>
               <button onClick={() => setIsForgotModalOpen(false)} style={styles.closeBtn}>
@@ -188,7 +165,7 @@ const Login = () => {
                     <Mail size={18} style={styles.inputIcon} />
                     <input
                       type="email"
-                      placeholder="exemplo@smartmaint.com"
+                      placeholder="voce@suaempresa.com.br"
                       value={forgotEmail}
                       onChange={(e) => setForgotEmail(e.target.value)}
                       style={styles.input}
@@ -215,8 +192,9 @@ const Login = () => {
 
 const styles = {
   container: {
-    height: '100vh',
-    width: '100vw',
+    minHeight: '100dvh',
+    width: '100%',
+    padding: '16px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -240,7 +218,7 @@ const styles = {
   loginCard: {
     width: '100%',
     maxWidth: '420px',
-    padding: '40px',
+    padding: 'clamp(24px, 6vw, 40px)',
     zIndex: 1,
     display: 'flex',
     flexDirection: 'column',
@@ -332,12 +310,6 @@ const styles = {
     fontSize: '12px',
     color: 'var(--text-muted)',
   },
-  demoCredits: {
-    marginTop: '8px',
-    fontSize: '10px',
-    color: 'var(--text-muted)',
-    opacity: 0.6,
-  },
   forgotBtn: {
     background: 'none',
     border: 'none',
@@ -346,15 +318,6 @@ const styles = {
     fontWeight: '600',
     cursor: 'pointer',
     padding: '4px',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0, left: 0, right: 0, bottom: 0,
-    background: 'rgba(0,0,0,0.4)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
   },
   modal: {
     width: '100%',

@@ -1,96 +1,162 @@
-import { useState } from 'react';
-import { 
-  Building2, Users, UserCircle, Shield, 
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
+import {
+  Building2, Users, UserCircle, Shield,
   CreditCard, Save, Plus, Trash2, Edit2,
-  ExternalLink, X, FileText, CalendarDays, RefreshCw, CheckCircle2
+  X, FileText, CalendarDays, RefreshCw, CheckCircle2, KeyRound
 } from 'lucide-react';
 import { useAuth, ROLES } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
+import { apiFetch, withQuery } from '../api/client';
+import { formatDate, formatCurrency, parseLocalDate } from '../utils/format';
+
+const TEAM_ROLES = [
+  { value: ROLES.ADMIN, label: 'Administrador' },
+  { value: ROLES.MANAGER, label: 'Gerente / Supervisor' },
+  { value: ROLES.USER, label: 'Operador (Usuário)' },
+];
+
+const EMPTY_USER = { name: '', email: '', role: ROLES.USER, password: '' };
 
 const Settings = () => {
-  const { user, activeTenant, tenants, hasRole } = useAuth();
+  const { user, activeTenant, tenants, hasRole, setToken, updateCurrentUser, refreshTenants } = useAuth();
   const { users, addUser, updateUser, deleteUser } = useData();
-  const [activeTab, setActiveTab] = useState(hasRole([ROLES.ROOT, ROLES.ADMIN]) ? 'company' : 'profile');
+  const [searchParams] = useSearchParams();
+  const canAdmin = hasRole([ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN]);
+
+  const tabs = [
+    { id: 'company', label: 'Empresa', icon: Building2, visible: canAdmin },
+    { id: 'users', label: 'Equipe', icon: Users, visible: canAdmin },
+    { id: 'profile', label: 'Meu Perfil', icon: UserCircle, visible: true },
+    { id: 'billing', label: 'Faturamento', icon: CreditCard, visible: canAdmin },
+  ].filter((tab) => tab.visible);
+
+  const requestedTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(
+    tabs.some((t) => t.id === requestedTab) ? requestedTab : (canAdmin ? 'company' : 'profile')
+  );
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
-  
-  // Dados do contrato do tenant ativo
-  const currentTenant = Array.isArray(tenants) ? tenants.find(t => t.id === activeTenant) : null;
-  
-  const [userFormData, setUserFormData] = useState({
-    name: '',
-    email: '',
-    role: 'USUARIO'
-  });
+  const [invoices, setInvoices] = useState([]);
 
-  const tabs = [
-    { id: 'company', label: 'Empresa', icon: Building2, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN] },
-    { id: 'users', label: 'Equipe', icon: Users, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN] },
-    { id: 'profile', label: 'Meu Perfil', icon: UserCircle, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER, ROLES.USER] },
-    { id: 'billing', label: 'Faturamento', icon: CreditCard, roles: [ROLES.ROOT] },
-  ];
+  // Dados do contrato do tenant ativo
+  const currentTenant = tenants.find(t => t.id === activeTenant) || null;
+
+  const [userFormData, setUserFormData] = useState(EMPTY_USER);
+  const [companyForm, setCompanyForm] = useState({ name: '', cnpj: '' });
+  const [profileName, setProfileName] = useState(user?.name || '');
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
+  const [saving, setSaving] = useState(null);
+
+  useEffect(() => {
+    setCompanyForm({ name: currentTenant?.name || '', cnpj: currentTenant?.cnpj || '' });
+  }, [currentTenant?.name, currentTenant?.cnpj]);
+
+  // Retorno do Checkout do Stripe
+  useEffect(() => {
+    if (searchParams.get('success')) toast.success('Pagamento recebido! A baixa da fatura pode levar alguns minutos (boleto: até 3 dias úteis).');
+    if (searchParams.get('canceled')) toast.info('Pagamento cancelado.');
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (activeTab !== 'billing' || !activeTenant) return;
+    apiFetch(withQuery('/api/billing/invoices', { tenant_id: activeTenant }))
+      .then(setInvoices)
+      .catch((err) => toast.error(err.message));
+  }, [activeTab, activeTenant]);
 
   const handleOpenAddUser = () => {
     setEditingUserId(null);
-    setUserFormData({ name: '', email: '', role: 'USUARIO' });
+    setUserFormData(EMPTY_USER);
     setIsUserModalOpen(true);
   };
 
   const handleOpenEditUser = (u) => {
     setEditingUserId(u.id);
-    setUserFormData({ ...u });
+    setUserFormData({ name: u.name, email: u.email, role: u.role, password: '' });
     setIsUserModalOpen(true);
   };
 
-  const handleUserSubmit = (e) => {
+  const handleUserSubmit = async (e) => {
     e.preventDefault();
-    if (editingUserId) {
-      updateUser(editingUserId, userFormData);
-    } else {
-      addUser(userFormData);
+    const { name, email, role, password } = userFormData;
+    const ok = editingUserId
+      ? await updateUser(editingUserId, { name, email, role })
+      : await addUser({ name, email, role, ...(password && { password }) });
+    if (ok) setIsUserModalOpen(false);
+  };
+
+  const save = async (key, action, successMessage) => {
+    setSaving(key);
+    try {
+      await action();
+      if (successMessage) toast.success(successMessage);
+      return true;
+    } catch (err) {
+      toast.error(err.message);
+      return false;
+    } finally {
+      setSaving(null);
     }
-    setIsUserModalOpen(false);
+  };
+
+  const handleCompanySave = (e) => {
+    e.preventDefault();
+    save('company', async () => {
+      await apiFetch(withQuery('/api/tenant', { tenant_id: activeTenant }), { method: 'PUT', body: companyForm });
+      await refreshTenants();
+    }, 'Dados da empresa atualizados!');
+  };
+
+  const handleProfileSave = (e) => {
+    e.preventDefault();
+    save('profile', async () => {
+      await apiFetch('/api/me', { method: 'PUT', body: { name: profileName } });
+      updateCurrentUser({ name: profileName });
+    }, 'Perfil atualizado!');
+  };
+
+  const handlePasswordSave = async (e) => {
+    e.preventDefault();
+    if (passwordForm.newPassword !== passwordForm.confirm) return toast.error('As senhas não coincidem.');
+    const ok = await save('password', async () => {
+      const data = await apiFetch('/api/me/password', {
+        method: 'PUT',
+        body: { currentPassword: passwordForm.currentPassword, newPassword: passwordForm.newPassword },
+      });
+      setToken(data.token);
+    }, 'Senha alterada! Outras sessões abertas foram encerradas.');
+    if (ok) setPasswordForm({ currentPassword: '', newPassword: '', confirm: '' });
   };
 
   const handleCheckout = async () => {
     setIsCheckoutLoading(true);
     try {
-      const tokenLocal = localStorage.getItem('token');
-      const res = await fetch('/api/billing/checkout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${tokenLocal}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.url) {
-        window.location.href = data.url;
-      } else {
-        alert(data.error || 'Erro ao gerar fatura');
-      }
-    } catch {
-      alert('Erro de comunicação.');
-    } finally {
+      const data = await apiFetch(withQuery('/api/billing/checkout', { tenant_id: activeTenant }), { method: 'POST', body: {} });
+      window.location.href = data.url;
+    } catch (err) {
+      toast.error(err.message);
       setIsCheckoutLoading(false);
     }
   };
 
+  const hasOpenInvoice = invoices.some((i) => i.status !== 'Paga');
+
   return (
     <div className="fade-in">
-      <header style={styles.header}>
+      <header className="page-header" style={styles.header}>
         <div>
           <h1 style={styles.pageTitle}>Configurações</h1>
           <p style={styles.pageSubtitle}>Gerencie os detalhes da sua conta e da sua empresa.</p>
         </div>
       </header>
 
-      <div style={styles.container}>
+      <div className="settings-layout" style={styles.container}>
         {/* Sidebar de Abas */}
         <div className="premium-card" style={styles.tabSidebar}>
           {tabs.map((tab) => {
-            if (!hasRole(tab.roles)) return null;
             const isActive = activeTab === tab.id;
             return (
               <button 
@@ -119,20 +185,22 @@ const Settings = () => {
                 title="Informações da Empresa" 
                 description="Dados básicos da sua organização e unidade fabril." 
               />
-              <div style={styles.formGrid}>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Nome Fantasia</label>
-                  <input type="text" defaultValue={currentTenant?.name || user?.company} style={styles.input} />
+              <form onSubmit={handleCompanySave}>
+                <div className="form-grid" style={styles.formGrid}>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label} htmlFor="company-name">Nome Fantasia</label>
+                    <input id="company-name" required maxLength={255} type="text" value={companyForm.name} onChange={(e) => setCompanyForm({ ...companyForm, name: e.target.value })} style={styles.input} />
+                  </div>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label} htmlFor="company-cnpj">CNPJ</label>
+                    <input id="company-cnpj" type="text" maxLength={20} placeholder="00.000.000/0001-00" value={companyForm.cnpj} onChange={(e) => setCompanyForm({ ...companyForm, cnpj: e.target.value })} style={styles.input} />
+                  </div>
                 </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>CNPJ</label>
-                  <input type="text" placeholder="00.000.000/0001-00" style={styles.input} />
-                </div>
-              </div>
-              <button className="btn-primary" style={{ marginTop: '24px' }}>
-                <Save size={18} />
-                Salvar Alterações
-              </button>
+                <button type="submit" className="btn-primary" style={{ marginTop: '24px' }} disabled={saving === 'company'}>
+                  <Save size={18} />
+                  {saving === 'company' ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </form>
 
               {/* Seção: Contrato de Prestação de Serviços */}
               <div style={{ marginTop: '48px' }}>
@@ -156,7 +224,7 @@ const Settings = () => {
                           Contrato {currentTenant.status === 'Ativo' ? 'Ativo' : currentTenant.status}
                         </p>
                         <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                          Plano: <strong>{currentTenant.plan_type || 'Pro'}</strong> • Valor mensal: <strong>R$ {parseFloat(currentTenant.valor_mensal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                          Plano: <strong>{currentTenant.plan_type || 'Pro'}</strong> • Valor mensal: <strong>{formatCurrency(currentTenant.valor_mensal)}</strong>
                         </p>
                       </div>
                       {currentTenant.renovacao_auto ? (
@@ -172,21 +240,21 @@ const Settings = () => {
                     </div>
 
                     {/* Datas do Contrato */}
-                    <div style={styles.formGrid}>
+                    <div className="form-grid" style={styles.formGrid}>
                       <div style={styles.inputGroup}>
                         <label style={styles.label}><CalendarDays size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Início do Contrato</label>
-                        <input type="date" value={currentTenant.contrato_inicio ? currentTenant.contrato_inicio.split('T')[0] : ''} style={styles.input} disabled />
+                        <input type="text" value={formatDate(currentTenant.contrato_inicio)} style={styles.input} disabled />
                       </div>
                       <div style={styles.inputGroup}>
                         <label style={styles.label}><CalendarDays size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Término / Renovação</label>
-                        <input type="date" value={currentTenant.contrato_fim ? currentTenant.contrato_fim.split('T')[0] : ''} style={styles.input} disabled />
+                        <input type="text" value={formatDate(currentTenant.contrato_fim)} style={styles.input} disabled />
                       </div>
                     </div>
 
                     {/* Tempo restante */}
                     {currentTenant.contrato_fim && (() => {
                       const hoje = new Date();
-                      const fim = new Date(currentTenant.contrato_fim);
+                      const fim = parseLocalDate(currentTenant.contrato_fim);
                       const diffMs = fim - hoje;
                       const diasRestantes = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
                       const isExpiring = diasRestantes <= 30;
@@ -222,7 +290,7 @@ const Settings = () => {
 
           {activeTab === 'users' && (
             <div className="fade-in">
-              <div style={styles.usersHeader}>
+              <div className="stack-mobile" style={styles.usersHeader}>
                 <SectionHeader 
                   title="Gestão de Equipe" 
                   description="Adicione ou remova membros da sua unidade na empresa." 
@@ -239,24 +307,24 @@ const Settings = () => {
                     <div style={styles.userAvatar}>
                       <UserCircle size={24} color={u.id === user?.id ? 'var(--primary)' : 'var(--text-muted)'} />
                     </div>
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={styles.userName}>{u.name} {u.id === user?.id && '(Você)'}</p>
                       <p style={styles.userEmail}>{u.email}</p>
                     </div>
                     <div style={{
                       ...styles.roleBadge,
-                      background: u.role === 'DONO' ? 'rgba(30, 58, 138, 0.1)' : '#f1f5f9',
-                      color: u.role === 'DONO' ? 'var(--primary)' : '#64748b'
+                      background: u.role === ROLES.ADMIN ? 'rgba(30, 58, 138, 0.1)' : '#f1f5f9',
+                      color: u.role === ROLES.ADMIN ? 'var(--primary)' : '#64748b'
                     }}>
                       <Shield size={12} />
                       {u.role}
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <button style={styles.actionBtn} onClick={() => handleOpenEditUser(u)}>
+                      <button style={styles.actionBtn} title="Editar" aria-label={`Editar ${u.name}`} onClick={() => handleOpenEditUser(u)}>
                         <Edit2 size={18} />
                       </button>
                       {u.id !== user?.id && (
-                        <button style={styles.deleteBtn} onClick={() => deleteUser(u.id)}>
+                        <button style={styles.deleteBtn} title="Remover" aria-label={`Remover ${u.name}`} onClick={() => deleteUser(u.id)}>
                           <Trash2 size={18} />
                         </button>
                       )}
@@ -273,20 +341,46 @@ const Settings = () => {
                 title="Meu Perfil" 
                 description="Suas informações pessoais de acesso ao sistema." 
               />
-              <div style={styles.formGrid}>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Nome Completo</label>
-                  <input type="text" defaultValue={user?.name} style={styles.input} />
+              <form onSubmit={handleProfileSave}>
+                <div className="form-grid" style={styles.formGrid}>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label} htmlFor="profile-name">Nome Completo</label>
+                    <input id="profile-name" required maxLength={255} type="text" value={profileName} onChange={(e) => setProfileName(e.target.value)} style={styles.input} />
+                  </div>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label} htmlFor="profile-email">E-mail</label>
+                    <input id="profile-email" type="email" value={user?.email || ''} style={styles.input} disabled />
+                  </div>
                 </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>E-mail</label>
-                  <input type="email" defaultValue={user?.email} style={styles.input} disabled />
-                </div>
+                <button type="submit" className="btn-primary" style={{ marginTop: '24px' }} disabled={saving === 'profile'}>
+                  <Save size={18} />
+                  {saving === 'profile' ? 'Salvando...' : 'Atualizar Perfil'}
+                </button>
+              </form>
+
+              <div style={{ marginTop: '48px' }}>
+                <SectionHeader title="Alterar Senha" description="Ao trocar a senha, as outras sessões abertas com sua conta são encerradas." />
+                <form onSubmit={handlePasswordSave}>
+                  <div className="form-grid" style={styles.formGrid}>
+                    <div style={{ ...styles.inputGroup, gridColumn: 'span 2' }}>
+                      <label style={styles.label} htmlFor="current-password">Senha atual</label>
+                      <input id="current-password" required type="password" autoComplete="current-password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} style={styles.input} />
+                    </div>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label} htmlFor="new-password">Nova senha</label>
+                      <input id="new-password" required minLength={8} type="password" autoComplete="new-password" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} style={styles.input} />
+                    </div>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label} htmlFor="confirm-password">Confirmar nova senha</label>
+                      <input id="confirm-password" required minLength={8} type="password" autoComplete="new-password" value={passwordForm.confirm} onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })} style={styles.input} />
+                    </div>
+                  </div>
+                  <button type="submit" className="btn-primary" style={{ marginTop: '24px' }} disabled={saving === 'password'}>
+                    <KeyRound size={18} />
+                    {saving === 'password' ? 'Alterando...' : 'Alterar Senha'}
+                  </button>
+                </form>
               </div>
-              <button className="btn-primary" style={{ marginTop: '24px' }}>
-                <Save size={18} />
-                Atualizar Perfil
-              </button>
             </div>
           )}
 
@@ -304,20 +398,44 @@ const Settings = () => {
                   </div>
                   <div style={styles.planStatus}>{currentTenant?.status || 'Ativo'}</div>
                 </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <button 
-                    className="btn-primary" 
-                    onClick={handleCheckout} 
-                    disabled={isCheckoutLoading}
-                    style={{ flex: 1, justifyContent: 'center' }}
-                  >
-                    {isCheckoutLoading ? 'Gerando Pagamento...' : 'Pagar Fatura / Renovar'}
-                  </button>
-                  <button style={{...styles.billingBtn, flex: 1, justifyContent: 'center', background: 'white', border: '1px solid var(--border)', borderRadius: '8px'}}>
-                    Ver Notas Fiscais
-                    <ExternalLink size={16} />
-                  </button>
-                </div>
+                <button
+                  className="btn-primary"
+                  onClick={handleCheckout}
+                  disabled={isCheckoutLoading || !hasOpenInvoice}
+                  style={{ width: '100%', justifyContent: 'center' }}
+                >
+                  {isCheckoutLoading ? 'Gerando Pagamento...' : hasOpenInvoice ? 'Pagar Fatura em Aberto' : 'Nenhuma fatura em aberto'}
+                </button>
+              </div>
+
+              <div style={{ marginTop: '32px' }}>
+                <h4 style={{ ...styles.planTitle, marginBottom: '12px' }}>Histórico de Faturas</h4>
+                {invoices.length === 0 ? (
+                  <p style={{ fontSize: '14px', color: 'var(--text-muted)' }}>Nenhuma fatura emitida.</p>
+                ) : (
+                  <div className="table-wrap">
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                      <thead>
+                        <tr style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase' }}>
+                          <th style={styles.th}>Referência</th>
+                          <th style={styles.th}>Vencimento</th>
+                          <th style={styles.th}>Valor</th>
+                          <th style={styles.th}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {invoices.map((inv) => (
+                          <tr key={inv.id} style={{ borderTop: '1px solid var(--border)' }}>
+                            <td style={styles.td}>{inv.mes_ref}</td>
+                            <td style={styles.td}>{formatDate(inv.vencimento)}</td>
+                            <td style={styles.td}>{formatCurrency(inv.valor)}</td>
+                            <td style={{ ...styles.td, fontWeight: 700, color: inv.status === 'Paga' ? 'var(--success)' : inv.status === 'Atrasada' ? 'var(--danger)' : 'var(--warning)' }}>{inv.status}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -326,8 +444,8 @@ const Settings = () => {
 
       {/* Modal de Novo/Editar Usuário */}
       {isUserModalOpen && (
-        <div style={styles.modalOverlay}>
-          <div className="premium-card fade-in" style={styles.modal}>
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>{editingUserId ? 'Editar Membro' : 'Adicionar Membro'}</h3>
               <button onClick={() => setIsUserModalOpen(false)} style={styles.closeBtn}>
@@ -335,7 +453,7 @@ const Settings = () => {
               </button>
             </div>
             <form onSubmit={handleUserSubmit}>
-              <div style={styles.formGrid}>
+              <div className="form-grid" style={styles.formGrid}>
                 <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
                   <label style={styles.label}>Nome Completo</label>
                   <input 
@@ -363,17 +481,18 @@ const Settings = () => {
                     value={userFormData.role}
                     onChange={(e) => setUserFormData({...userFormData, role: e.target.value})}
                   >
-                    <option value="Administrador">Administrador</option>
-                    <option value="Usuário">Operador (Usuário)</option>
+                    {TEAM_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
                 </div>
                 {!editingUserId && (
                   <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
-                    <label style={styles.label}>Senha de Acesso (Provisória)</label>
-                    <input 
-                      type="password" 
-                      style={styles.input} 
-                      placeholder="Ex: 123456"
+                    <label style={styles.label}>Senha provisória (opcional)</label>
+                    <input
+                      type="password"
+                      minLength={8}
+                      autoComplete="new-password"
+                      style={styles.input}
+                      placeholder="Deixe em branco para enviar convite por e-mail"
                       value={userFormData.password || ''}
                       onChange={(e) => setUserFormData({...userFormData, password: e.target.value})}
                     />
@@ -401,7 +520,7 @@ const styles = {
   container: { display: 'grid', gridTemplateColumns: '260px 1fr', gap: '24px', alignItems: 'start' },
   tabSidebar: { padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' },
   tabBtn: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', textAlign: 'left', transition: 'var(--transition)' },
-  contentArea: { padding: '40px', minHeight: '500px' },
+  contentArea: { padding: 'clamp(20px, 4vw, 40px)', minHeight: '500px', minWidth: 0 },
   sectionHeader: { marginBottom: '32px', borderBottom: '1px solid var(--border)', paddingBottom: '20px' },
   sectionTitle: { fontSize: '18px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' },
   sectionDesc: { fontSize: '14px', color: 'var(--text-muted)' },
@@ -424,8 +543,8 @@ const styles = {
   planTitle: { fontSize: '16px', fontWeight: '700', color: 'var(--text-main)' },
   planDesc: { fontSize: '13px', color: 'var(--text-muted)' },
   planStatus: { background: 'var(--success)', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '700' },
-  billingBtn: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--primary)', fontWeight: '600', background: 'transparent', cursor: 'pointer' },
-  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
+  th: { padding: '10px 12px', fontWeight: 600 },
+  td: { padding: '12px' },
   modal: { width: '100%', maxWidth: '500px', padding: '32px', background: 'white' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' },
   modalTitle: { fontSize: '20px', fontWeight: '700' },

@@ -5,9 +5,16 @@ import {
   User, Cpu, Tag, Calendar, X, Edit2, Trash2
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
+import { useAuth, ROLES } from '../contexts/AuthContext';
+import { escapeHtml, formatDate } from '../utils/format';
 
 const WorkOrders = () => {
   const { equipments, workOrders, users, addWorkOrder, updateWorkOrder, deleteWorkOrder } = useData();
+  const { hasRole } = useAuth();
+  // Usuário operacional apenas abre e acompanha chamados
+  const canManage = hasRole([ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]);
+  const [completing, setCompleting] = useState(null); // O.S. sendo concluída (pede o tempo de reparo)
+  const [repairHours, setRepairHours] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -58,27 +65,38 @@ const WorkOrders = () => {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const data = { ...formData, equipment_id: Number(formData.equipment_id) };
-    if (editingId) {
-      updateWorkOrder(editingId, data);
-    } else {
-      addWorkOrder(data);
-    }
-    setIsModalOpen(false);
+    const { equipment_id, titulo, descricao, tipo, prioridade, responsavel } = formData;
+    const data = { equipment_id: Number(equipment_id), titulo, descricao, tipo, prioridade, responsavel };
+    const ok = editingId ? await updateWorkOrder(editingId, data) : await addWorkOrder(data);
+    if (ok) setIsModalOpen(false);
   };
 
   const updateStatus = (id, newStatus) => {
     updateWorkOrder(id, { status: newStatus });
   };
 
+  const openComplete = (os) => {
+    setCompleting(os);
+    setRepairHours(os.tempo_reparo || '');
+  };
+
+  const handleComplete = async (e) => {
+    e.preventDefault();
+    const ok = await updateWorkOrder(completing.id, { status: 'Concluída', tempo_reparo: Number(repairHours) });
+    if (ok) setCompleting(null);
+  };
+
   const handlePrint = (os) => {
+    // Todo texto vindo do usuário é escapado: a janela de impressão compartilha a origem do sistema
+    const v = (value) => escapeHtml(value);
     const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
     printWindow.document.write(`
       <html>
         <head>
-          <title>Ordem de Serviço #${os.id}</title>
+          <title>Ordem de Serviço #${v(os.id)}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 40px; color: #333; }
             .header { border-bottom: 2px solid #1e3a8a; padding-bottom: 20px; margin-bottom: 30px; }
@@ -92,18 +110,20 @@ const WorkOrders = () => {
         </head>
         <body>
           <div class="header">
-            <h1>Ordem de Serviço #${os.id}</h1>
-            <p><strong>Status:</strong> ${os.status} | <strong>Prioridade:</strong> ${os.prioridade}</p>
+            <h1>Ordem de Serviço #${v(os.id)}</h1>
+            <p><strong>Status:</strong> ${v(os.status)} | <strong>Prioridade:</strong> ${v(os.prioridade)}</p>
           </div>
           <div class="meta">
-            <div><strong>Data de Abertura:</strong> ${new Date(os.data_criacao).toLocaleDateString('pt-BR')}</div>
-            <div><strong>Responsável:</strong> ${os.responsavel}</div>
+            <div><strong>Data de Abertura:</strong> ${v(formatDate(os.data_criacao))}</div>
+            <div><strong>Responsável:</strong> ${v(os.responsavel)}</div>
           </div>
           <div class="box">
             <h3>Detalhes da Manutenção</h3>
-            <p><strong>Equipamento:</strong> ${getEquipmentName(os.equipment_id)}</p>
-            <p><strong>Tipo de Manutenção:</strong> ${os.tipo}</p>
-            <p><strong>Título / Descrição:</strong> ${os.titulo}</p>
+            <p><strong>Equipamento:</strong> ${v(getEquipmentName(os.equipment_id))}</p>
+            <p><strong>Tipo de Manutenção:</strong> ${v(os.tipo)}</p>
+            <p><strong>Título:</strong> ${v(os.titulo)}</p>
+            ${os.descricao ? `<p><strong>Descrição:</strong> ${v(os.descricao)}</p>` : ''}
+            ${os.tempo_reparo ? `<p><strong>Tempo de reparo:</strong> ${v(os.tempo_reparo)} h</p>` : ''}
           </div>
           <div class="box">
             <h3>Peças / Materiais Utilizados</h3>
@@ -115,7 +135,7 @@ const WorkOrders = () => {
           </div>
           <div class="footer">
             <div class="signature">
-              Assinatura do Técnico (${os.responsavel})
+              Assinatura do Técnico (${v(os.responsavel)})
             </div>
             <div class="signature" style="margin-left: 50px;">
               Assinatura do Cliente / Supervisor
@@ -134,12 +154,12 @@ const WorkOrders = () => {
 
   return (
     <div className="fade-in">
-      <header style={styles.header}>
+      <header className="page-header" style={styles.header}>
         <div>
           <h1 style={styles.pageTitle}>Ordens de Serviço</h1>
           <p style={styles.pageSubtitle}>Planejamento e controle das atividades de manutenção.</p>
         </div>
-        <button className="btn-primary" onClick={handleOpenAdd}>
+        <button className="btn-primary" onClick={handleOpenAdd} disabled={equipments.length === 0} title={equipments.length === 0 ? 'Cadastre um equipamento primeiro' : undefined}>
           <Plus size={20} />
           Abrir O.S.
         </button>
@@ -172,8 +192,12 @@ const WorkOrders = () => {
               </div>
               <div style={{ display: 'flex', gap: '4px' }}>
                 <button title="Imprimir O.S." style={styles.iconBtn} onClick={() => handlePrint(os)}><Printer size={14} /></button>
-                <button style={styles.iconBtn} onClick={() => handleOpenEdit(os)}><Edit2 size={14} /></button>
-                <button style={styles.iconBtn} onClick={() => deleteWorkOrder(os.id)}><Trash2 size={14} color="var(--danger)" /></button>
+                {canManage && (
+                  <>
+                    <button title="Editar" aria-label="Editar O.S." style={styles.iconBtn} onClick={() => handleOpenEdit(os)}><Edit2 size={14} /></button>
+                    <button title="Excluir" aria-label="Excluir O.S." style={styles.iconBtn} onClick={() => deleteWorkOrder(os.id)}><Trash2 size={14} color="var(--danger)" /></button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -194,7 +218,7 @@ const WorkOrders = () => {
               </div>
               <div style={styles.metaItem}>
                 <Calendar size={14} />
-                <span>{new Date(os.data_criacao).toLocaleDateString('pt-BR')}</span>
+                <span>{formatDate(os.data_criacao)}</span>
               </div>
             </div>
 
@@ -204,11 +228,17 @@ const WorkOrders = () => {
                 {os.prioridade}
               </div>
               <div style={styles.actionGroup}>
-                {os.status === 'Aberta' && (
-                  <button style={styles.startBtn} onClick={() => updateStatus(os.id, 'Em Execução')}>Iniciar</button>
+                {canManage && (os.status === 'Aberta' || os.status === 'Pausada') && (
+                  <button style={styles.startBtn} onClick={() => updateStatus(os.id, 'Em Execução')}>{os.status === 'Pausada' ? 'Retomar' : 'Iniciar'}</button>
                 )}
-                {os.status === 'Em Execução' && (
-                  <button style={styles.doneBtn} onClick={() => updateStatus(os.id, 'Concluída')}>Concluir</button>
+                {canManage && os.status === 'Em Execução' && (
+                  <>
+                    <button style={styles.pauseBtn} onClick={() => updateStatus(os.id, 'Pausada')}>Pausar</button>
+                    <button style={styles.doneBtn} onClick={() => openComplete(os)}>Concluir</button>
+                  </>
+                )}
+                {os.status === 'Concluída' && os.tempo_reparo && (
+                  <span style={styles.repairInfo}>{Number(os.tempo_reparo)} h de reparo</span>
                 )}
               </div>
             </div>
@@ -218,17 +248,21 @@ const WorkOrders = () => {
 
       {/* Modal */}
       {isModalOpen && (
-        <div style={styles.modalOverlay}>
-          <div className="premium-card fade-in" style={styles.modal}>
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>{editingId ? 'Editar O.S.' : 'Abrir Nova O.S.'}</h3>
               <button onClick={() => setIsModalOpen(false)} style={styles.closeBtn}><X size={20} /></button>
             </div>
             <form onSubmit={handleSubmit}>
-              <div style={styles.formGrid}>
+              <div className="form-grid" style={styles.formGrid}>
                 <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
                   <label style={styles.label}>Título da Atividade</label>
-                  <input required style={styles.input} value={formData.titulo} onChange={(e) => setFormData({...formData, titulo: e.target.value})} />
+                  <input required maxLength={255} style={styles.input} value={formData.titulo} onChange={(e) => setFormData({...formData, titulo: e.target.value})} />
+                </div>
+                <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
+                  <label style={styles.label}>Descrição (opcional)</label>
+                  <textarea rows={3} maxLength={5000} style={styles.input} value={formData.descricao || ''} onChange={(e) => setFormData({...formData, descricao: e.target.value})} />
                 </div>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Equipamento</label>
@@ -238,7 +272,8 @@ const WorkOrders = () => {
                 </div>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Responsável</label>
-                  <select style={styles.select} value={formData.responsavel} onChange={(e) => setFormData({...formData, responsavel: e.target.value})}>
+                  <select style={styles.select} value={formData.responsavel || ''} onChange={(e) => setFormData({...formData, responsavel: e.target.value})}>
+                    <option value="">A definir</option>
                     {users.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
                   </select>
                 </div>
@@ -269,6 +304,29 @@ const WorkOrders = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de conclusão: o tempo real de reparo alimenta MTTR e disponibilidade */}
+      {completing && (
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={{ ...styles.modal, maxWidth: '420px' }}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>Concluir O.S. #{completing.id}</h3>
+              <button onClick={() => setCompleting(null)} style={styles.closeBtn} aria-label="Fechar"><X size={20} /></button>
+            </div>
+            <form onSubmit={handleComplete}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label} htmlFor="repair-hours">Tempo efetivo de reparo (horas)</label>
+                <input id="repair-hours" required autoFocus type="number" min="0.1" step="0.1" style={styles.input} value={repairHours} onChange={(e) => setRepairHours(e.target.value)} />
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Usado no cálculo de MTTR e disponibilidade do equipamento.</p>
+              </div>
+              <div style={styles.modalFooter}>
+                <button type="button" onClick={() => setCompleting(null)} style={styles.cancelBtn}>Cancelar</button>
+                <button type="submit" className="btn-primary">Concluir O.S.</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -280,7 +338,7 @@ const styles = {
   toolbar: { padding: '16px 24px', marginBottom: '24px' },
   searchWrapper: { display: 'flex', alignItems: 'center', gap: '12px', flex: 1, maxWidth: '400px' },
   searchInput: { width: '100%', border: 'none', fontSize: '14px', outline: 'none' },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px' },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: '24px' },
   card: { padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' },
   cardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   statusBadge: { padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' },
@@ -291,8 +349,10 @@ const styles = {
   cardFooter: { marginTop: '8px', paddingTop: '16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   priorityBadge: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600' },
   startBtn: { padding: '6px 16px', borderRadius: '6px', background: '#3b82f6', color: 'white', fontSize: '12px', fontWeight: '600' },
+  actionGroup: { display: 'flex', alignItems: 'center', gap: '8px' },
+  pauseBtn: { padding: '6px 12px', borderRadius: '6px', background: '#f1f5f9', color: 'var(--text-muted)', fontSize: '12px', fontWeight: '600' },
+  repairInfo: { fontSize: '12px', color: 'var(--text-muted)', fontWeight: '600' },
   doneBtn: { padding: '6px 16px', borderRadius: '6px', background: '#10b981', color: 'white', fontSize: '12px', fontWeight: '600' },
-  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { width: '100%', maxWidth: '550px', padding: '32px', background: 'white' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' },
   modalTitle: { fontSize: '20px', fontWeight: '700' },

@@ -47,27 +47,24 @@ const FMEA = () => {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const data = {
-      ...formData,
+      componente: formData.componente,
+      modo_falha: formData.modo_falha,
       equipment_id: Number(formData.equipment_id),
       severity: Number(formData.severity),
       ocorrencia: Number(formData.ocorrencia),
       deteccao: Number(formData.deteccao)
     };
 
-    if (editingId) {
-      updateFmea(editingId, data);
-    } else {
-      addFmea(data);
-    }
-    setIsModalOpen(false);
+    const ok = editingId ? await updateFmea(editingId, data) : await addFmea(data);
+    if (ok) setIsModalOpen(false);
   };
 
   return (
     <div className="fade-in">
-      <header style={styles.header}>
+      <header className="page-header" style={styles.header}>
         <div>
           <h1 style={styles.pageTitle}>Análise de Risco (FMEA)</h1>
           <p style={styles.pageSubtitle}>Priorize suas ações de manutenção baseado no RPN (Risk Priority Number).</p>
@@ -90,6 +87,8 @@ const FMEA = () => {
             Nova Análise
           </button>
         </div>
+
+        <div className="table-wrap">
 
         <table style={styles.table}>
           <thead>
@@ -146,12 +145,13 @@ const FMEA = () => {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Modal de Análise */}
       {isModalOpen && (
-        <div style={styles.modalOverlay}>
-          <div className="premium-card fade-in" style={styles.modal}>
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>{editingId ? 'Editar Análise' : 'Nova Análise FMEA'}</h3>
               <button onClick={() => setIsModalOpen(false)} style={styles.closeBtn}>
@@ -159,7 +159,7 @@ const FMEA = () => {
               </button>
             </div>
             <form onSubmit={handleSubmit}>
-              <div style={styles.formGrid}>
+              <div className="form-grid" style={styles.formGrid}>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Equipamento</label>
                   <select 
@@ -349,15 +349,6 @@ const styles = {
     background: 'transparent',
     padding: '8px',
     cursor: 'pointer',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0, left: 0, right: 0, bottom: 0,
-    background: 'rgba(0,0,0,0.4)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
   },
   modal: {
     width: '100%',

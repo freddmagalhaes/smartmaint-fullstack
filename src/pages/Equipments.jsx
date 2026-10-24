@@ -1,12 +1,17 @@
 import { useState } from 'react';
 import { 
   Plus, Search, 
-  Calendar, Hash, Tag, Activity, X, Trash2, Edit2
+  Calendar, Hash, Tag, Activity, X, Trash2, Edit2, Cpu
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useData } from '../contexts/DataContext';
+import { useAuth } from '../contexts/AuthContext';
+import { apiFetch, withQuery } from '../api/client';
+import { formatDate, todayISO } from '../utils/format';
 
 const Equipments = () => {
-  const { equipments, addEquipment, updateEquipment, deleteEquipment } = useData();
+  const { equipments, workOrders, addEquipment, updateEquipment, deleteEquipment } = useData();
+  const { activeTenant } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -18,23 +23,26 @@ const Equipments = () => {
     type: 'Mecânico',
     model: '',
     serie: '',
-    image: 'https://images.unsplash.com/photo-1581092160562-40aa08e78837?q=80&w=300&h=200&auto=format&fit=crop',
+    image: '',
     total_op_time: 0,
-    data_inicio: new Date().toISOString().split('T')[0]
+    data_inicio: todayISO()
   });
 
-  const filteredEquipments = equipments.filter(eq => 
-    eq.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    eq.serie.toLowerCase().includes(searchTerm.toLowerCase())
+  const term = searchTerm.toLowerCase();
+  const filteredEquipments = equipments.filter(eq =>
+    eq.name.toLowerCase().includes(term) || (eq.serie || '').toLowerCase().includes(term)
   );
+
+  // Equipamento com O.S. em execução está em manutenção
+  const inMaintenance = new Set(workOrders.filter(os => os.status === 'Em Execução').map(os => os.equipment_id));
 
   const handleOpenAdd = () => {
     setEditingId(null);
     setFormData({ 
       name: '', type: 'Mecânico', model: '', serie: '', 
-      image: 'https://images.unsplash.com/photo-1581092160562-40aa08e78837?q=80&w=300&h=200&auto=format&fit=crop',
+      image: '',
       total_op_time: 0,
-      data_inicio: new Date().toISOString().split('T')[0]
+      data_inicio: todayISO()
     });
     setIsModalOpen(true);
   };
@@ -54,42 +62,26 @@ const Equipments = () => {
     formDataObj.append('file', file);
 
     try {
-      const tokenLocal = localStorage.getItem('token');
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${tokenLocal}` },
-        body: formDataObj
-      });
-      const data = await res.json();
-      if (res.ok && data.url) {
-        setFormData(prev => ({ ...prev, image: data.url }));
-      } else {
-        alert(data.error || 'Erro no upload da imagem');
-      }
-    } catch {
-      alert('Falha na comunicação ao enviar imagem');
+      const data = await apiFetch(withQuery('/api/upload', { tenant_id: activeTenant }), { method: 'POST', body: formDataObj });
+      setFormData(prev => ({ ...prev, image: data.url }));
+    } catch (err) {
+      toast.error(err.message);
     } finally {
       setIsUploading(false);
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (editingId) {
-      updateEquipment(editingId, formData);
-    } else {
-      addEquipment(formData);
-    }
-    setIsModalOpen(false);
-  };
-
-  const getStatusColor = () => {
-    return 'var(--success)';
+    const { name, type, model, serie, image, total_op_time, data_inicio } = formData;
+    const data = { name, type, model, serie, image: image || null, total_op_time: Number(total_op_time) || 0, data_inicio: data_inicio || null };
+    const ok = editingId ? await updateEquipment(editingId, data) : await addEquipment(data);
+    if (ok) setIsModalOpen(false);
   };
 
   return (
     <div className="fade-in">
-      <header style={styles.header}>
+      <header className="page-header" style={styles.header}>
         <div>
           <h1 style={styles.pageTitle}>Gestão de Ativos</h1>
           <p style={styles.pageSubtitle}>Visualize e gerencie todos os equipamentos da planta.</p>
@@ -116,6 +108,7 @@ const Equipments = () => {
 
       {/* Tabela de Equipamentos */}
       <div className="premium-card" style={styles.tableContainer}>
+        <div className="table-wrap">
         <table style={styles.table}>
           <thead>
             <tr>
@@ -133,11 +126,16 @@ const Equipments = () => {
                 <td style={styles.td}>
                   <div style={styles.eqInfo}>
                     <div style={styles.eqIcon}>
-                      <img 
-                        src={eq.image} 
-                        alt={eq.name} 
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '10px' }} 
-                      />
+                      {eq.image ? (
+                        <img
+                          src={eq.image}
+                          loading="lazy"
+                          alt={eq.name}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '10px' }}
+                        />
+                      ) : (
+                        <Cpu size={20} color="var(--primary)" />
+                      )}
                     </div>
                     <div>
                       <p style={styles.eqName}>{eq.name}</p>
@@ -158,31 +156,33 @@ const Equipments = () => {
                 <td style={styles.td}>
                   <div style={styles.subInfo}>
                     <Calendar size={14} />
-                    <span>{new Date(eq.data_inicio).toLocaleDateString('pt-BR')}</span>
+                    <span>{formatDate(eq.data_inicio)}</span>
                   </div>
                 </td>
                 <td style={styles.td}>
                   <div style={styles.opTime}>
                     <Activity size={14} />
-                    <span>{eq.total_op_time.toLocaleString()}h</span>
+                    <span>{Number(eq.total_op_time || 0).toLocaleString('pt-BR')}h</span>
                   </div>
                 </td>
                 <td style={styles.td}>
-                  <div style={{
-                    ...styles.statusBadge,
-                    background: `${getStatusColor()}15`,
-                    color: getStatusColor(),
-                  }}>
-                    <div style={{ ...styles.statusDot, background: getStatusColor() }}></div>
-                    Operacional
-                  </div>
+                  {(() => {
+                    const maintenance = inMaintenance.has(eq.id);
+                    const color = maintenance ? '#f59e0b' : '#16a34a';
+                    return (
+                      <div style={{ ...styles.statusBadge, background: `${color}15`, color }}>
+                        <div style={{ ...styles.statusDot, background: color }}></div>
+                        {maintenance ? 'Em Manutenção' : 'Operacional'}
+                      </div>
+                    );
+                  })()}
                 </td>
                 <td style={styles.td}>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button style={styles.actionBtn} onClick={() => handleOpenEdit(eq)}>
+                    <button style={styles.actionBtn} title="Editar" aria-label={`Editar ${eq.name}`} onClick={() => handleOpenEdit(eq)}>
                       <Edit2 size={16} />
                     </button>
-                    <button style={styles.actionBtn} onClick={() => deleteEquipment(eq.id)}>
+                    <button style={styles.actionBtn} title="Excluir" aria-label={`Excluir ${eq.name}`} onClick={() => deleteEquipment(eq.id)}>
                       <Trash2 size={16} color="var(--danger)" />
                     </button>
                   </div>
@@ -191,12 +191,13 @@ const Equipments = () => {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Modal de Cadastro/Edição */}
       {isModalOpen && (
-        <div style={styles.modalOverlay}>
-          <div className="premium-card fade-in" style={styles.modal}>
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>{editingId ? 'Editar Equipamento' : 'Novo Equipamento'}</h3>
               <button onClick={() => setIsModalOpen(false)} style={styles.closeBtn}>
@@ -204,7 +205,7 @@ const Equipments = () => {
               </button>
             </div>
             <form onSubmit={handleSubmit}>
-              <div style={styles.formGrid}>
+              <div className="form-grid" style={styles.formGrid}>
                 <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
                   <label style={styles.label}>Nome do Equipamento</label>
                   <input 
@@ -218,10 +219,14 @@ const Equipments = () => {
                 <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
                   <label style={styles.label}>Foto do Equipamento</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <img src={formData.image} alt="Preview" style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                    {formData.image ? (
+                      <img src={formData.image} alt="Pré-visualização" style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                    ) : (
+                      <div className="flex-center" style={{ width: '48px', height: '48px', borderRadius: '8px', border: '1px dashed var(--border)' }}><Cpu size={20} color="var(--text-muted)" /></div>
+                    )}
                     <input 
                       type="file" 
-                      accept="image/*"
+                      accept="image/png,image/jpeg,image/webp"
                       onChange={handleImageUpload}
                       disabled={isUploading}
                       style={{ fontSize: '13px' }}
@@ -248,7 +253,8 @@ const Equipments = () => {
                   <input 
                     type="number" 
                     style={styles.input} 
-                    value={formData.total_op_time}
+                    value={formData.total_op_time ?? 0}
+                    min="0"
                     onChange={(e) => setFormData({...formData, total_op_time: Number(e.target.value)})}
                   />
                 </div>
@@ -258,7 +264,7 @@ const Equipments = () => {
                     required
                     type="text" 
                     style={styles.input} 
-                    value={formData.model}
+                    value={formData.model || ''}
                     onChange={(e) => setFormData({...formData, model: e.target.value})}
                   />
                 </div>
@@ -268,14 +274,14 @@ const Equipments = () => {
                     required
                     type="text" 
                     style={styles.input} 
-                    value={formData.serie}
+                    value={formData.serie || ''}
                     onChange={(e) => setFormData({...formData, serie: e.target.value})}
                   />
                 </div>
               </div>
               <div style={styles.modalFooter}>
                 <button type="button" onClick={() => setIsModalOpen(false)} style={styles.cancelBtn}>Cancelar</button>
-                <button type="submit" className="btn-primary">
+                <button type="submit" className="btn-primary" disabled={isUploading}>
                   {editingId ? 'Salvar Alterações' : 'Criar Ativo'}
                 </button>
               </div>
@@ -408,19 +414,6 @@ const styles = {
     borderRadius: '8px',
     background: 'transparent',
     cursor: 'pointer',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0,0,0,0.4)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-    padding: '20px',
   },
   modal: {
     width: '100%',

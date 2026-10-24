@@ -52,7 +52,29 @@ button {
 
 input, select, textarea {
   font-family: inherit;
+  font-size: inherit;
   outline: none;
+  max-width: 100%;
+}
+
+/* Foco visível para navegação por teclado (acessibilidade) */
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  border-color: var(--primary-light) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+img {
+  max-width: 100%;
 }
 
 /* Scrollbar Style */
@@ -123,4 +145,269 @@ input, select, textarea {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- Estrutura da aplicação (menu lateral + conteúdo) ---------- */
+.app-shell {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg-main);
+}
+
+.app-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--primary-dark);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  transition: var(--transition);
+  z-index: 30;
+}
+
+.app-sidebar.is-collapsed { width: 80px; }
+.app-sidebar.is-collapsed .app-brand,
+.app-sidebar.is-collapsed .app-nav-label { display: none; }
+.app-sidebar.is-collapsed .app-nav-item { justify-content: center; }
+
+.app-sidebar-header {
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.app-brand { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+.app-sidebar-close { display: none; margin-left: auto; color: #94a3b8; padding: 4px; }
+
+.app-nav {
+  padding: 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.app-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  color: #94a3b8;
+  font-size: 14px;
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+.app-nav-item:hover { background: rgba(255, 255, 255, 0.06); color: white; }
+.app-nav-item.is-active { background: rgba(255, 255, 255, 0.1); color: white; font-weight: 600; }
+.app-nav-item.is-backoffice {
+  margin-top: 16px;
+  color: #f59e0b;
+  font-weight: 600;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.app-sidebar-footer { padding: 20px 12px; border-top: 1px solid rgba(255, 255, 255, 0.05); }
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-header {
+  height: 64px;
+  flex-shrink: 0;
+  background: white;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 24px;
+}
+
+.app-menu-btn { color: var(--text-muted); padding: 8px; border-radius: 8px; }
+.app-header-right { display: flex; align-items: center; gap: 20px; min-width: 0; }
+
+.app-tenant-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  min-width: 0;
+}
+
+.app-tenant-selector select {
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.app-company-badge {
+  padding: 6px 12px;
+  background: rgba(30, 58, 138, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(30, 58, 138, 0.1);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-user { display: flex; align-items: center; gap: 12px; }
+.app-user-text { text-align: right; }
+.app-user-name { font-size: 14px; font-weight: 600; color: var(--text-main); }
+.app-user-role { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.app-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(30, 58, 138, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.app-content { flex: 1; overflow-y: auto; padding: 32px; }
+
+.app-impersonation {
+  background: linear-gradient(90deg, #1e3a8a, #3b82f6);
+  color: white;
+  padding: 8px 24px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.app-impersonation-link {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: white;
+  text-decoration: none;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.app-sidebar-backdrop { display: none; }
+
+/* ---------- Modais ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 1000;
+}
+
+.modal-card {
+  width: 100%;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+/* Tabelas largas rolam na horizontal dentro do cartão, sem quebrar a página */
+.table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* ---------- Celular e tablet ---------- */
+@media (max-width: 900px) {
+  .app-sidebar,
+  .app-sidebar.is-collapsed {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 280px;
+    transform: translateX(-100%);
+    box-shadow: var(--shadow-lg);
+  }
+  .app-sidebar.is-open { transform: translateX(0); }
+  .app-sidebar.is-collapsed .app-brand,
+  .app-sidebar.is-collapsed .app-nav-label { display: inline; }
+  .app-sidebar.is-collapsed .app-nav-item { justify-content: flex-start; }
+  .app-sidebar-close { display: block; }
+  .app-sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 25;
+  }
+
+  .app-header { padding: 0 12px; }
+  .app-header-right { gap: 10px; }
+  .app-user-text { display: none; }
+  .app-content { padding: 16px; }
+  .app-impersonation { padding: 8px 12px; }
+  .app-impersonation-link { margin-left: 0; }
+
+  /* Páginas usam estilos inline; estes ajustes adaptam os padrões mais comuns */
+  .page-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 16px;
+  }
+  .form-grid { grid-template-columns: 1fr !important; }
+  .form-grid > * { grid-column: auto !important; }
+  .stack-mobile { flex-direction: column !important; align-items: stretch !important; }
+  .modal-card { padding: 20px !important; }
+  .card-grid { grid-template-columns: 1fr !important; }
+}
+
+@media (max-width: 480px) {
+  .app-company-badge { max-width: 140px; }
+}
+
+.table-wrap > table { min-width: 640px; }
+
+@media (max-width: 900px) {
+  .settings-layout { grid-template-columns: 1fr !important; }
 }

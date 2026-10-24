@@ -23,6 +23,8 @@ app.use(helmet({
       // Imagens de equipamentos podem vir de URLs https externas
       'img-src': ["'self'", 'data:', 'https:'],
       'connect-src': ["'self'"],
+      // Só força HTTPS nos recursos quando o site já é servido por HTTPS (evita quebrar deploys em HTTP)
+      'upgrade-insecure-requests': process.env.FORCE_HTTPS === 'true' ? [] : null,
     },
   },
 }));

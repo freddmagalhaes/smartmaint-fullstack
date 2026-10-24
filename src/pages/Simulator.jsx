@@ -10,7 +10,9 @@ import { useData } from '../contexts/DataContext';
 const Simulator = () => {
   const { equipments, failures } = useData();
   
-  const [selectedEquipId, setSelectedEquipId] = useState(equipments[0]?.id);
+  const [chosenEquipId, setSelectedEquipId] = useState(null);
+  // Enquanto nada foi escolhido, usa o primeiro equipamento (os dados podem chegar depois da página abrir)
+  const selectedEquipId = chosenEquipId ?? equipments[0]?.id;
   const [targetTime, setTargetTime] = useState(100);
 
   // Calcula os dados do equipamento selecionado
@@ -39,7 +41,7 @@ const Simulator = () => {
 
   return (
     <div className="fade-in">
-      <header style={styles.header}>
+      <header className="page-header" style={styles.header}>
         <div>
           <h1 style={styles.pageTitle}>Simulador de Confiabilidade</h1>
           <p style={styles.pageSubtitle}>Calcule a probabilidade de sobrevivência R(t) baseada no histórico real.</p>
@@ -179,7 +181,7 @@ const styles = {
   },
   grid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 350px), 1fr))',
     gap: '24px',
   },
   configPanel: {

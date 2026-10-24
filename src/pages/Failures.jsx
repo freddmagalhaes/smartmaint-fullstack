@@ -4,6 +4,7 @@ import {
   Search, CheckCircle2, X, Trash2, Edit2
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
+import { formatDate } from '../utils/format';
 
 const Failures = () => {
   const { equipments, failures, repairs, addFailure, updateFailure, deleteFailure } = useData();
@@ -37,25 +38,21 @@ const Failures = () => {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const data = {
-      ...formData,
       equipment_id: Number(formData.equipment_id),
-      tempo_operacao: Number(formData.tempo_operacao)
+      descricao: formData.descricao,
+      tempo_operacao: Number(formData.tempo_operacao),
+      ...(formData.data_falha && { data_falha: formData.data_falha }),
     };
-
-    if (editingId) {
-      updateFailure(editingId, data);
-    } else {
-      addFailure(data);
-    }
-    setIsModalOpen(false);
+    const ok = editingId ? await updateFailure(editingId, data) : await addFailure(data);
+    if (ok) setIsModalOpen(false);
   };
 
   return (
     <div className="fade-in">
-      <header style={styles.header}>
+      <header className="page-header" style={styles.header}>
         <div>
           <h1 style={styles.pageTitle}>Eventos de Manutenção</h1>
           <p style={styles.pageSubtitle}>Histórico completo de falhas e reparos realizados.</p>
@@ -105,7 +102,7 @@ const Failures = () => {
               <div style={styles.eventInfo}>
                 <div style={styles.eventHeader}>
                   <h3 style={styles.eventTitle}>{getEquipmentName(failure.equipment_id)}</h3>
-                  <span style={styles.eventDate}>{new Date(failure.data_falha).toLocaleDateString('pt-BR')}</span>
+                  <span style={styles.eventDate}>{formatDate(failure.data_falha)}</span>
                 </div>
                 <p style={styles.eventDesc}>{failure.descricao}</p>
                 <div style={styles.eventMeta}>
@@ -132,7 +129,7 @@ const Failures = () => {
               <div style={styles.eventInfo}>
                 <div style={styles.eventHeader}>
                   <h3 style={styles.eventTitle}>{getEquipmentName(repair.equipment_id)}</h3>
-                  <span style={styles.eventDate}>{new Date(repair.data_reparo).toLocaleDateString('pt-BR')}</span>
+                  <span style={styles.eventDate}>{formatDate(repair.data_reparo)}</span>
                 </div>
                 <p style={styles.eventDesc}>Manutenção {repair.tipo} concluída com sucesso.</p>
                 <div style={styles.eventMeta}>
@@ -147,8 +144,8 @@ const Failures = () => {
 
       {/* Modal de Registro */}
       {isModalOpen && (
-        <div style={styles.modalOverlay}>
-          <div className="premium-card fade-in" style={styles.modal}>
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>{editingId ? 'Editar Ocorrência' : 'Registrar Ocorrência'}</h3>
               <button onClick={() => setIsModalOpen(false)} style={styles.closeBtn}>
@@ -156,7 +153,7 @@ const Failures = () => {
               </button>
             </div>
             <form onSubmit={handleSubmit}>
-              <div style={styles.formGrid}>
+              <div className="form-grid" style={styles.formGrid}>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Ativo Afetado</label>
                   <select 
@@ -331,19 +328,6 @@ const styles = {
     borderRadius: '8px',
     background: 'transparent',
     cursor: 'pointer',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0,0,0,0.4)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-    padding: '20px',
   },
   modal: {
     width: '100%',

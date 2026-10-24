@@ -34,3 +34,9 @@ pnpm-debug.log*
 
 # Testing
 server/test-db.js
+
+# Testes / temporários
+lint_report.json
+*:Zone.Identifier
+server/uploads/
+uploads/
