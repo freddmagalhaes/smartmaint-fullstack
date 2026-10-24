@@ -1,11 +1,12 @@
 import { useMemo, useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { apiFetch, withQuery } from '../api/client';
+import { formatCurrency } from '../utils/format';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie
 } from 'recharts';
 import { 
-  TrendingUp, TrendingDown, Clock, Activity, Zap, ClipboardList
+  TrendingUp, TrendingDown, Clock, Activity, Zap, ClipboardList, Package
 } from 'lucide-react';
 import { 
   calculateLambda, calculateMTBF, calculateMTTR, calculateAvailability, formatPercent, formatHours 
@@ -97,6 +98,13 @@ const Dashboard = () => {
           icon={Zap}
           color="var(--warning)"
           subtitle="Tempo médio entre falhas"
+        />
+        <StatCard
+          title="Custo de Peças"
+          value={formatCurrency(summary?.parts_cost_6m)}
+          icon={Package}
+          color="var(--danger)"
+          subtitle="Últimos 6 meses"
         />
         <StatCard 
           title="Taxa de Falha" 

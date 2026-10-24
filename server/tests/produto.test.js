@@ -258,6 +258,17 @@ describe('importação de equipamentos', () => {
     assert.equal(b1.data_inicio, '2024-03-15');
   });
 
+  it('com várias unidades, usa a unidade escolhida na tela para linhas sem unidade', async () => {
+    const admin = api(tokens.admin);
+    const unit = await admin.post('/api/units').send({ name: 'Planta Betim' });
+    const semUnidade = await admin.post('/api/equipments/import').send({ dry_run: true, rows: [{ name: 'Torno 1' }] });
+    assert.equal(semUnidade.status, 422);
+    const res = await admin.post('/api/equipments/import').send({ rows: [{ name: 'Torno 1' }], default_unit_id: unit.body.id });
+    assert.equal(res.status, 201);
+    const [[eq]] = await db.query("SELECT unit_id FROM equipments WHERE name = 'Torno 1'");
+    assert.equal(eq.unit_id, unit.body.id);
+  });
+
   it('respeita o limite do plano', async () => {
     await db.query("UPDATE tenants SET plan_type = 'Starter' WHERE id = 'globex'");
     await db.query("UPDATE plans SET max_equipments = 2 WHERE id = 'Starter'");

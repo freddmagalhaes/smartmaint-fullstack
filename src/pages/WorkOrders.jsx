@@ -6,9 +6,11 @@ import {
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import { useAuth, ROLES } from '../contexts/AuthContext';
-import { escapeHtml, formatDate } from '../utils/format';
+import { escapeHtml, formatDate, formatCurrency } from '../utils/format';
 import { usePagedList, useDebounced } from '../hooks/usePagedList';
 import Pagination from '../components/Pagination';
+import WorkOrderDetail from '../components/WorkOrderDetail';
+import { useSearchParams } from 'react-router-dom';
 
 const STATUS_FILTERS = [
   { value: 'abertas', label: 'Em aberto' },
@@ -25,6 +27,10 @@ const WorkOrders = () => {
   // Usuário operacional apenas abre e acompanha chamados
   const canManage = hasRole([ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]);
   const [completing, setCompleting] = useState(null); // O.S. sendo concluída (pede o tempo de reparo)
+  // Detalhe aberto; links dos e-mails chegam como /work-orders?open=ID
+  const [searchParams, setSearchParams] = useSearchParams();
+  const detailId = Number(searchParams.get('open')) || null;
+  const openDetail = (id) => setSearchParams(id ? { open: String(id) } : {}, { replace: !id });
   const [repairHours, setRepairHours] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('abertas');
@@ -215,7 +221,16 @@ const WorkOrders = () => {
               </div>
             </div>
 
-            <h3 style={styles.cardTitle}>{os.titulo}</h3>
+            <button type="button" style={styles.cardTitleBtn} onClick={() => openDetail(os.id)}>
+              <h3 style={styles.cardTitle}>{os.titulo}</h3>
+            </button>
+            {(Number(os.checklist_total) > 0 || Number(os.parts_cost) > 0) && (
+              <p style={styles.cardExtra}>
+                {Number(os.checklist_total) > 0 && <>Checklist {os.checklist_done}/{os.checklist_total}</>}
+                {Number(os.checklist_total) > 0 && Number(os.parts_cost) > 0 && ' · '}
+                {Number(os.parts_cost) > 0 && <>Peças {formatCurrency(os.parts_cost)}</>}
+              </p>
+            )}
             
             <div style={styles.cardMeta}>
               <div style={styles.metaItem}>
@@ -325,6 +340,8 @@ const WorkOrders = () => {
         </div>
       )}
 
+      {detailId && <WorkOrderDetail workOrderId={detailId} onClose={() => openDetail(null)} />}
+
       {/* Modal de conclusão: o tempo real de reparo alimenta MTTR e disponibilidade */}
       {completing && (
         <div className="modal-overlay">
@@ -365,6 +382,8 @@ const styles = {
   cardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   statusBadge: { padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' },
   iconBtn: { background: 'transparent', color: '#94a3b8', padding: '4px' },
+  cardTitleBtn: { background: 'transparent', textAlign: 'left', padding: 0, cursor: 'pointer' },
+  cardExtra: { fontSize: '12px', color: 'var(--text-muted)', marginTop: '-8px' },
   cardTitle: { fontSize: '16px', fontWeight: '700', color: 'var(--text-main)' },
   cardMeta: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   metaItem: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-muted)' },

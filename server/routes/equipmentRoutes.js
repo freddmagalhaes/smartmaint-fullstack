@@ -4,6 +4,7 @@ const {
 } = require('../utils/routeHelpers');
 const { pageParams, paginate, like } = require('../utils/pagination');
 const { assertWithinLimit, getTenantPlan } = require('../utils/plans');
+const { HttpError } = require('../utils/errorHandler');
 const db = require('../db');
 const { audit } = require('../utils/audit');
 const { ROLES, MANAGERS, TENANT_ROLES, requireRole, tenantScope } = require('../middleware/rbac');
@@ -134,12 +135,15 @@ const importRowSchema = z.object({
  * Com dry_run=true apenas valida (pré-visualização).
  */
 router.post('/equipments/import', requireRole(...MANAGERS), tenantScope, async (req, res) => {
-  const { rows, dry_run: dryRun } = parse(z.object({
+  const { rows, dry_run: dryRun, default_unit_id: defaultUnit } = parse(z.object({
     rows: z.array(z.record(z.string(), z.any())).min(1, 'a planilha está vazia').max(MAX_IMPORT_ROWS, `máximo de ${MAX_IMPORT_ROWS} linhas por importação`),
     dry_run: z.boolean().default(false),
+    // Unidade usada nas linhas sem a coluna "Unidade" (a unidade escolhida na tela)
+    default_unit_id: id.nullish(),
   }), req.body);
 
   const units = await query('SELECT id, name FROM units WHERE tenant_id = ? ORDER BY id', [req.tenantId]);
+  if (defaultUnit && !units.some((u) => u.id === defaultUnit)) throw new HttpError(400, 'Unidade não encontrada para este cliente');
   const unitByName = new Map(units.map((u) => [u.name.trim().toLowerCase(), u.id]));
   const errors = [];
   const valid = [];
@@ -152,15 +156,15 @@ router.post('/equipments/import', requireRole(...MANAGERS), tenantScope, async (
       return;
     }
     const row = result.data;
-    let unitId = units[0]?.id;
+    let unitId = defaultUnit || units[0]?.id;
     if (row.unit) {
       unitId = unitByName.get(row.unit.toLowerCase());
       if (!unitId) {
         errors.push({ line, message: `unidade "${row.unit}" não existe (cadastradas: ${units.map((u) => u.name).join(', ')})` });
         return;
       }
-    } else if (units.length > 1) {
-      errors.push({ line, message: 'informe a unidade (o cliente tem mais de uma)' });
+    } else if (units.length > 1 && !defaultUnit) {
+      errors.push({ line, message: 'informe a coluna Unidade ou escolha uma unidade no topo da tela antes de importar' });
       return;
     }
     valid.push({ ...row, unit_id: unitId, line });

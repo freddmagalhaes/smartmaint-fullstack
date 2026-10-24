@@ -4,10 +4,11 @@ export const TOKEN_KEY = 'sm_token';
 export const SESSION_EXPIRED_EVENT = 'sm:session-expired';
 
 export class ApiError extends Error {
-  constructor(status, message, code) {
+  constructor(status, message, code, body) {
     super(message);
     this.status = status;
     this.code = code;
+    this.body = body;
   }
 }
 
@@ -48,7 +49,7 @@ export const apiFetch = async (path, { method = 'GET', body, auth = true } = {})
     if (auth && token && (res.status === 401 || data?.code === 'TENANT_BLOCKED')) {
       window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, { detail: { message } }));
     }
-    throw new ApiError(res.status, message, data?.code);
+    throw new ApiError(res.status, message, data?.code, data);
   }
   return data;
 };
