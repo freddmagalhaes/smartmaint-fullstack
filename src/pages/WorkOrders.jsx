@@ -7,15 +7,29 @@ import {
 import { useData } from '../contexts/DataContext';
 import { useAuth, ROLES } from '../contexts/AuthContext';
 import { escapeHtml, formatDate } from '../utils/format';
+import { usePagedList, useDebounced } from '../hooks/usePagedList';
+import Pagination from '../components/Pagination';
+
+const STATUS_FILTERS = [
+  { value: 'abertas', label: 'Em aberto' },
+  { value: 'Aberta', label: 'Abertas' },
+  { value: 'Em Execução', label: 'Em execução' },
+  { value: 'Pausada', label: 'Pausadas' },
+  { value: 'Concluída', label: 'Concluídas' },
+  { value: '', label: 'Todas' },
+];
 
 const WorkOrders = () => {
-  const { equipments, workOrders, users, addWorkOrder, updateWorkOrder, deleteWorkOrder } = useData();
+  const { equipments, users, addWorkOrder, updateWorkOrder, deleteWorkOrder } = useData();
   const { hasRole } = useAuth();
   // Usuário operacional apenas abre e acompanha chamados
   const canManage = hasRole([ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]);
   const [completing, setCompleting] = useState(null); // O.S. sendo concluída (pede o tempo de reparo)
   const [repairHours, setRepairHours] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('abertas');
+  const search = useDebounced(searchTerm.trim());
+  const list = usePagedList('/api/work-orders', { q: search || undefined, status: statusFilter || undefined }, { pageSize: 24 });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   
@@ -28,7 +42,7 @@ const WorkOrders = () => {
     responsavel: users[0]?.name || ''
   });
 
-  const getEquipmentName = (id) => equipments.find(eq => eq.id === id)?.name || 'Desconhecido';
+  const getEquipmentName = (os) => os.equipment_name || equipments.find(eq => eq.id === os.equipment_id)?.name || 'Desconhecido';
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -119,7 +133,7 @@ const WorkOrders = () => {
           </div>
           <div class="box">
             <h3>Detalhes da Manutenção</h3>
-            <p><strong>Equipamento:</strong> ${v(getEquipmentName(os.equipment_id))}</p>
+            <p><strong>Equipamento:</strong> ${v(getEquipmentName(os))}</p>
             <p><strong>Tipo de Manutenção:</strong> ${v(os.tipo)}</p>
             <p><strong>Título:</strong> ${v(os.titulo)}</p>
             ${os.descricao ? `<p><strong>Descrição:</strong> ${v(os.descricao)}</p>` : ''}
@@ -177,14 +191,14 @@ const WorkOrders = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+        <select aria-label="Filtrar por status" style={styles.filterSelect} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          {STATUS_FILTERS.map((f) => <option key={f.label} value={f.value}>{f.label}</option>)}
+        </select>
       </div>
 
       {/* Grid de O.S. */}
       <div style={styles.grid}>
-        {workOrders.filter(os => 
-          os.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          getEquipmentName(os.equipment_id).toLowerCase().includes(searchTerm.toLowerCase())
-        ).map((os) => (
+        {list.items.map((os) => (
           <div key={os.id} className="premium-card" style={styles.card}>
             <div style={styles.cardHeader}>
               <div style={{...styles.statusBadge, background: `${getStatusColor(os.status)}15`, color: getStatusColor(os.status)}}>
@@ -206,7 +220,7 @@ const WorkOrders = () => {
             <div style={styles.cardMeta}>
               <div style={styles.metaItem}>
                 <Cpu size={14} />
-                <span>{getEquipmentName(os.equipment_id)}</span>
+                <span>{getEquipmentName(os)}</span>
               </div>
               <div style={styles.metaItem}>
                 <Tag size={14} />
@@ -245,6 +259,12 @@ const WorkOrders = () => {
           </div>
         ))}
       </div>
+      {!list.loading && list.items.length === 0 && (
+        <div className="premium-card" style={styles.empty}>
+          {search || statusFilter ? 'Nenhuma O.S. encontrada com estes filtros.' : 'Nenhuma ordem de serviço ainda. Clique em "Abrir O.S." para começar.'}
+        </div>
+      )}
+      <Pagination page={list.page} pageSize={list.pageSize} total={list.total} onChange={list.setPage} loading={list.loading} />
 
       {/* Modal */}
       {isModalOpen && (
@@ -335,7 +355,9 @@ const styles = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' },
   pageTitle: { fontSize: '24px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' },
   pageSubtitle: { fontSize: '14px', color: 'var(--text-muted)' },
-  toolbar: { padding: '16px 24px', marginBottom: '24px' },
+  toolbar: { padding: '12px 16px', marginBottom: '24px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' },
+  filterSelect: { padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'white', fontSize: '13px' },
+  empty: { padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px' },
   searchWrapper: { display: 'flex', alignItems: 'center', gap: '12px', flex: 1, maxWidth: '400px' },
   searchInput: { width: '100%', border: 'none', fontSize: '14px', outline: 'none' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: '24px' },

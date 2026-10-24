@@ -6,6 +6,7 @@ const { hashPassword } = require('../utils/passwords');
 const { signToken } = require('../middleware/auth');
 const { publicUser } = require('./authRoutes');
 const { parse, z, text, password } = require('../utils/validate');
+const { audit } = require('../utils/audit');
 
 const router = express.Router();
 
@@ -32,6 +33,7 @@ router.put('/me/password', async (req, res) => {
   }
   const tokenVersion = user.token_version + 1;
   await query('UPDATE users SET password = ?, token_version = ? WHERE id = ?', [await hashPassword(data.newPassword), tokenVersion, req.user.id]);
+  await audit(req, { action: 'password_change', entity: 'user', entityId: req.user.id });
   // Outras sessões são encerradas; esta recebe um token novo
   res.json({ message: 'Senha alterada com sucesso', token: signToken({ id: req.user.id, token_version: tokenVersion }) });
 });

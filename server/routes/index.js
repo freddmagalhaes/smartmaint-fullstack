@@ -17,6 +17,11 @@ router.use(require('./inventoryRoutes'));
 router.use(require('./preventiveRoutes'));
 router.use(require('./uploadRoutes').apiRouter);
 router.use(require('./billingRoutes').router);
+router.use(require('./unitRoutes'));
+router.use(require('./dashboardRoutes'));
+router.use(require('./auditRoutes'));
+router.use(require('./planRoutes'));
+router.use(require('./fiscalRoutes'));
 
 router.use(notFound);
 

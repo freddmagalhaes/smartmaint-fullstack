@@ -79,7 +79,8 @@ describe('isolamento entre clientes', () => {
   it('usuário de cliente ignora tenant_id de outro cliente', async () => {
     const res = await api(tokens['admin@acme']).get('/api/equipments?tenant_id=globex');
     assert.equal(res.status, 200);
-    assert.ok(res.body.every((e) => e.tenant_id === 'acme'));
+    assert.ok(res.body.items.length > 0);
+    assert.ok(res.body.items.every((e) => e.tenant_id === 'acme'));
   });
 
   it('não permite vincular equipamento de outro cliente', async () => {
@@ -99,7 +100,7 @@ describe('isolamento entre clientes', () => {
     assert.equal((await api(tokens.suporte).get('/api/equipments?tenant_id=inexistente')).status, 404);
     const res = await api(tokens.suporte).get('/api/equipments?tenant_id=globex');
     assert.equal(res.status, 200);
-    assert.equal(res.body[0].tenant_id, 'globex');
+    assert.equal(res.body.items[0].tenant_id, 'globex');
   });
 });
 
@@ -192,13 +193,13 @@ describe('ordens de serviço e MTTR', () => {
     // salvar de novo não duplica o reparo
     assert.equal((await admin.put(`/api/work-orders/${os.body.id}`).send({ titulo: 'Troca de rolamento (ok)' })).status, 200);
 
-    const repairs = (await admin.get('/api/repairs')).body.filter((r) => r.work_order_id === os.body.id);
+    const repairs = (await admin.get('/api/repairs')).body.items.filter((r) => r.work_order_id === os.body.id);
     assert.equal(repairs.length, 1);
     assert.equal(Number(repairs[0].tempo_reparo), 2.5);
 
     // reabrir remove o reparo
     await admin.put(`/api/work-orders/${os.body.id}`).send({ status: 'Em Execução' });
-    const after = (await admin.get('/api/repairs')).body.filter((r) => r.work_order_id === os.body.id);
+    const after = (await admin.get('/api/repairs')).body.items.filter((r) => r.work_order_id === os.body.id);
     assert.equal(after.length, 0);
   });
 
@@ -216,7 +217,7 @@ describe('planos preventivos', () => {
     const plan = await admin.post('/api/preventive-plans').send({ equipment_id: acmeEquipmentId, title: 'Lubrificação', interval_days: 15 });
     assert.equal(plan.status, 201);
     assert.equal((await admin.put(`/api/preventive-plans/${plan.body.id}`).send({ reset_due: true })).status, 200);
-    const saved = (await admin.get('/api/preventive-plans')).body.find((p) => p.id === plan.body.id);
+    const saved = (await admin.get('/api/preventive-plans')).body.items.find((p) => p.id === plan.body.id);
     assert.ok(saved.last_executed);
   });
 });

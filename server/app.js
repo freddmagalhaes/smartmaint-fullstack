@@ -4,6 +4,9 @@ const helmet = require('helmet');
 const path = require('path');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
+const pinoHttp = require('pino-http');
+const logger = require('./utils/logger');
 const { config } = require('./config');
 const db = require('./db');
 const routes = require('./routes/index');
@@ -17,12 +20,31 @@ const distDir = path.join(__dirname, '../dist');
 app.set('trust proxy', config.trustProxy);
 app.disable('x-powered-by');
 
+// Log estruturado de cada requisição com id de correlação (devolvido em X-Request-Id)
+app.use(pinoHttp({
+  logger,
+  genReqId: (req, res) => {
+    const incoming = req.headers['x-request-id'];
+    const id = typeof incoming === 'string' && /^[\w-]{8,64}$/.test(incoming) ? incoming : crypto.randomUUID();
+    res.setHeader('X-Request-Id', id);
+    return id;
+  },
+  autoLogging: { ignore: (req) => req.url === '/api/health' || !req.url.startsWith('/api') },
+  customLogLevel: (req, res, err) => (err || res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info'),
+  serializers: {
+    req: (req) => ({ id: req.id, method: req.method, url: req.url }),
+    res: (res) => ({ statusCode: res.statusCode }),
+  },
+  customProps: (req) => (req.user ? { user_id: req.user.id, tenant_id: req.tenantId || req.user.tenant_id || null } : {}),
+}));
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       // Imagens de equipamentos podem vir de URLs https externas
       'img-src': ["'self'", 'data:', 'https:'],
-      'connect-src': ["'self'"],
+      // Sentry do frontend (opcional) envia erros para o domínio de ingestão
+      'connect-src': ["'self'", 'https://*.ingest.sentry.io', 'https://*.ingest.us.sentry.io', 'https://*.ingest.de.sentry.io'],
       // Só força HTTPS nos recursos quando o site já é servido por HTTPS (evita quebrar deploys em HTTP)
       'upgrade-insecure-requests': process.env.FORCE_HTTPS === 'true' ? [] : null,
     },

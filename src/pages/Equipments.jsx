@@ -8,9 +8,11 @@ import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, withQuery } from '../api/client';
 import { formatDate, todayISO } from '../utils/format';
+import { usePagedList, useDebounced } from '../hooks/usePagedList';
+import Pagination from '../components/Pagination';
 
 const Equipments = () => {
-  const { equipments, workOrders, addEquipment, updateEquipment, deleteEquipment } = useData();
+  const { units, activeUnit, addEquipment, updateEquipment, deleteEquipment } = useData();
   const { activeTenant } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -28,18 +30,15 @@ const Equipments = () => {
     data_inicio: todayISO()
   });
 
-  const term = searchTerm.toLowerCase();
-  const filteredEquipments = equipments.filter(eq =>
-    eq.name.toLowerCase().includes(term) || (eq.serie || '').toLowerCase().includes(term)
-  );
-
-  // Equipamento com O.S. em execução está em manutenção
-  const inMaintenance = new Set(workOrders.filter(os => os.status === 'Em Execução').map(os => os.equipment_id));
+  const search = useDebounced(searchTerm.trim());
+  const list = usePagedList('/api/equipments', { q: search || undefined });
+  const showUnits = units.length > 1;
 
   const handleOpenAdd = () => {
     setEditingId(null);
     setFormData({ 
-      name: '', type: 'Mecânico', model: '', serie: '', 
+      name: '', type: 'Mecânico', model: '', serie: '',
+      unit_id: activeUnit || units[0]?.id || '',
       image: '',
       total_op_time: 0,
       data_inicio: todayISO()
@@ -73,8 +72,11 @@ const Equipments = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const { name, type, model, serie, image, total_op_time, data_inicio } = formData;
-    const data = { name, type, model, serie, image: image || null, total_op_time: Number(total_op_time) || 0, data_inicio: data_inicio || null };
+    const { name, type, model, serie, image, total_op_time, data_inicio, unit_id } = formData;
+    const data = {
+      name, type, model, serie, image: image || null, total_op_time: Number(total_op_time) || 0, data_inicio: data_inicio || null,
+      ...(unit_id && { unit_id: Number(unit_id) }),
+    };
     const ok = editingId ? await updateEquipment(editingId, data) : await addEquipment(data);
     if (ok) setIsModalOpen(false);
   };
@@ -121,7 +123,7 @@ const Equipments = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredEquipments.map((eq) => (
+            {list.items.map((eq) => (
               <tr key={eq.id} style={styles.tr}>
                 <td style={styles.td}>
                   <div style={styles.eqInfo}>
@@ -139,7 +141,7 @@ const Equipments = () => {
                     </div>
                     <div>
                       <p style={styles.eqName}>{eq.name}</p>
-                      <p style={styles.eqType}>{eq.type}</p>
+                      <p style={styles.eqType}>{eq.type}{showUnits && eq.unit_name ? ` · ${eq.unit_name}` : ''}</p>
                     </div>
                   </div>
                 </td>
@@ -167,7 +169,8 @@ const Equipments = () => {
                 </td>
                 <td style={styles.td}>
                   {(() => {
-                    const maintenance = inMaintenance.has(eq.id);
+                    // Equipamento com O.S. em execução está em manutenção
+                    const maintenance = Number(eq.running_os_count) > 0;
                     const color = maintenance ? '#f59e0b' : '#16a34a';
                     return (
                       <div style={{ ...styles.statusBadge, background: `${color}15`, color }}>
@@ -192,7 +195,13 @@ const Equipments = () => {
           </tbody>
         </table>
         </div>
+        {!list.loading && list.items.length === 0 && (
+          <p style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px' }}>
+            {search ? 'Nenhum equipamento encontrado.' : 'Nenhum equipamento cadastrado. Clique em "Novo Equipamento" para começar.'}
+          </p>
+        )}
       </div>
+      <Pagination page={list.page} pageSize={list.pageSize} total={list.total} onChange={list.setPage} loading={list.loading} />
 
       {/* Modal de Cadastro/Edição */}
       {isModalOpen && (
@@ -216,6 +225,14 @@ const Equipments = () => {
                     onChange={(e) => setFormData({...formData, name: e.target.value})}
                   />
                 </div>
+                {showUnits && (
+                  <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
+                    <label style={styles.label}>Unidade</label>
+                    <select required style={styles.select} value={formData.unit_id || ''} onChange={(e) => setFormData({...formData, unit_id: e.target.value})}>
+                      {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
                   <label style={styles.label}>Foto do Equipamento</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

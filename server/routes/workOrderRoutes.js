@@ -4,6 +4,8 @@ const { query, assertEquipmentInTenant, assertAffected, buildUpdate } = require(
 const { HttpError } = require('../utils/errorHandler');
 const { ROLES, MANAGERS, TENANT_ROLES, isBackoffice, requireRole, tenantScope } = require('../middleware/rbac');
 const { parse, z, text, optionalText, id, date, idParam } = require('../utils/validate');
+const { pageParams, paginate, like } = require('../utils/pagination');
+const { audit } = require('../utils/audit');
 
 const router = express.Router();
 
@@ -25,7 +27,31 @@ const workOrderSchema = z.object({
 });
 
 router.get('/work-orders', requireRole(...TENANT_ROLES), tenantScope, async (req, res) => {
-  res.json(await query('SELECT * FROM work_orders WHERE tenant_id = ? ORDER BY id DESC', [req.tenantId]));
+  const { page, pageSize, q } = pageParams(req);
+  const f = parse(z.object({
+    unit_id: id.optional(),
+    equipment_id: id.optional(),
+    status: z.union([statusEnum, z.literal('abertas')]).optional(), // "abertas" = tudo que não está concluído
+    prioridade: workOrderSchema.shape.prioridade.optional(),
+    tipo: workOrderSchema.shape.tipo.optional(),
+  }), req.query);
+  const where = ['w.tenant_id = ?'];
+  const params = [req.tenantId];
+  if (f.equipment_id) { where.push('w.equipment_id = ?'); params.push(f.equipment_id); }
+  if (f.unit_id) { where.push('e.unit_id = ?'); params.push(f.unit_id); }
+  if (f.status === 'abertas') where.push(`w.status <> '${DONE}'`);
+  else if (f.status) { where.push('w.status = ?'); params.push(f.status); }
+  if (f.prioridade) { where.push('w.prioridade = ?'); params.push(f.prioridade); }
+  if (f.tipo) { where.push('w.tipo = ?'); params.push(f.tipo); }
+  if (q) { where.push('(w.titulo LIKE ? OR e.name LIKE ? OR w.responsavel LIKE ?)'); params.push(like(q), like(q), like(q)); }
+  res.json(await paginate({
+    select: 'w.*, e.name AS equipment_name, e.unit_id',
+    from: 'work_orders w JOIN equipments e ON e.id = w.equipment_id',
+    where, params,
+    // Não concluídas primeiro, das mais críticas para as menos
+    orderBy: `w.status = '${DONE}', FIELD(w.prioridade, 'Crítica', 'Alta', 'Média', 'Baixa'), w.id DESC`,
+    page, pageSize,
+  }));
 });
 
 router.post('/work-orders', requireRole(...TENANT_ROLES), tenantScope, async (req, res) => {
@@ -39,6 +65,7 @@ router.post('/work-orders', requireRole(...TENANT_ROLES), tenantScope, async (re
     'INSERT INTO work_orders (tenant_id, equipment_id, titulo, descricao, tipo, prioridade, status, responsavel, data_criacao) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [req.tenantId, d.equipment_id, d.titulo, d.descricao ?? null, d.tipo, d.prioridade, d.status, d.responsavel ?? null, d.data_criacao || today()]
   );
+  await audit(req, { action: 'create', entity: 'work_order', entityId: result.insertId, changes: d });
   res.status(201).json({ id: result.insertId, ...d, tenant_id: req.tenantId });
 });
 
@@ -72,6 +99,7 @@ router.put('/work-orders/:id', requireRole(...MANAGERS), tenantScope, async (req
     }
   });
 
+  await audit(req, { action: d.status ? `status:${d.status}` : 'update', entity: 'work_order', entityId: workOrderId, changes: d });
   res.json({ message: 'OS atualizada' });
 });
 
@@ -81,6 +109,7 @@ router.delete('/work-orders/:id', requireRole(...MANAGERS), tenantScope, async (
     await q('DELETE FROM repairs WHERE work_order_id = ? AND tenant_id = ?', [workOrderId, req.tenantId]);
     assertAffected(await q('DELETE FROM work_orders WHERE id = ? AND tenant_id = ?', [workOrderId, req.tenantId]), 'O.S. não encontrada');
   });
+  await audit(req, { action: 'delete', entity: 'work_order', entityId: workOrderId });
   res.json({ message: 'Excluída com sucesso' });
 });
 

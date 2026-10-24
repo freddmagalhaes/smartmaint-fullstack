@@ -7,6 +7,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 # --ignore-scripts: o postinstall instala o backend, que tem estágio próprio
 RUN npm ci --ignore-scripts
+# Sentry do frontend (opcional): docker build --build-arg VITE_SENTRY_DSN=...
+ARG VITE_SENTRY_DSN
+ARG VITE_APP_VERSION
 COPY index.html vite.config.js eslint.config.js ./
 COPY public ./public
 COPY src ./src

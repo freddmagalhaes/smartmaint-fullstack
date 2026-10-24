@@ -4,9 +4,14 @@ import {
 } from 'lucide-react';
 import { calculateRPN } from '../utils/formulas';
 import { useData } from '../contexts/DataContext';
+import { usePagedList, useDebounced } from '../hooks/usePagedList';
+import Pagination from '../components/Pagination';
 
 const FMEA = () => {
-  const { equipments, fmea, addFmea, updateFmea, deleteFmea } = useData();
+  const { equipments, addFmea, updateFmea, deleteFmea } = useData();
+  const [searchTerm, setSearchTerm] = useState('');
+  const search = useDebounced(searchTerm.trim());
+  const fmea = usePagedList('/api/fmea', { q: search || undefined });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   
@@ -80,9 +85,9 @@ const FMEA = () => {
         <div style={styles.toolbar}>
           <div style={styles.searchWrapper}>
             <Search size={18} color="var(--text-muted)" />
-            <input type="text" placeholder="Filtrar por equipamento ou componente..." style={styles.searchInput} />
+            <input type="text" placeholder="Buscar por componente ou modo de falha..." style={styles.searchInput} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
           </div>
-          <button className="btn-primary" onClick={handleOpenAdd}>
+          <button className="btn-primary" onClick={handleOpenAdd} disabled={equipments.length === 0}>
             <Plus size={18} />
             Nova Análise
           </button>
@@ -104,12 +109,12 @@ const FMEA = () => {
             </tr>
           </thead>
           <tbody>
-            {fmea.map((item) => {
+            {fmea.items.map((item) => {
               const rpn = calculateRPN(item.severity, item.ocorrencia, item.deteccao);
               return (
                 <tr key={item.id} style={styles.tr}>
                   <td style={styles.td}>
-                    <p style={styles.eqName}>{getEquipmentName(item.equipment_id)}</p>
+                    <p style={styles.eqName}>{item.equipment_name || getEquipmentName(item.equipment_id)}</p>
                     <p style={styles.compName}>{item.componente}</p>
                   </td>
                   <td style={styles.td}>
@@ -132,10 +137,10 @@ const FMEA = () => {
                   </td>
                   <td style={styles.td}>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <button style={styles.actionBtn} onClick={() => handleOpenEdit(item)}>
+                      <button style={styles.actionBtn} title="Editar" aria-label="Editar análise" onClick={() => handleOpenEdit(item)}>
                         <Edit2 size={16} />
                       </button>
-                      <button style={styles.deleteBtn} onClick={() => deleteFmea(item.id)}>
+                      <button style={styles.deleteBtn} title="Excluir" aria-label="Excluir análise" onClick={() => deleteFmea(item.id)}>
                         <Trash2 size={16} />
                       </button>
                     </div>
@@ -145,6 +150,12 @@ const FMEA = () => {
             })}
           </tbody>
         </table>
+        </div>
+        {!fmea.loading && fmea.items.length === 0 && (
+          <p style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px' }}>Nenhuma análise encontrada.</p>
+        )}
+        <div style={{ padding: '0 16px' }}>
+          <Pagination page={fmea.page} pageSize={fmea.pageSize} total={fmea.total} onChange={fmea.setPage} loading={fmea.loading} />
         </div>
       </div>
 

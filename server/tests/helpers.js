@@ -47,7 +47,10 @@ const setupDatabase = async () => {
   for (const [tenant, name, email, role, master] of users) {
     await db.query('INSERT INTO users (tenant_id, name, email, password, role, is_master) VALUES (?, ?, ?, ?, ?, ?)', [tenant, name, email, hash, role, master]);
   }
-  await db.query("INSERT INTO equipments (tenant_id, name) VALUES ('acme', 'Compressor ACME'), ('globex', 'Prensa Globex')");
+  await db.query("INSERT INTO units (tenant_id, name) VALUES ('acme', 'Planta Contagem'), ('globex', 'Unidade Principal')");
+  await db.query(`INSERT INTO equipments (tenant_id, unit_id, name)
+    SELECT 'acme', id, 'Compressor ACME' FROM units WHERE tenant_id = 'acme'
+    UNION ALL SELECT 'globex', id, 'Prensa Globex' FROM units WHERE tenant_id = 'globex'`);
 };
 
 const getApp = () => require('../app');

@@ -45,6 +45,15 @@ const config = {
     autoBlock: process.env.BILLING_AUTO_BLOCK !== 'false',
     graceDays: Number(process.env.BILLING_GRACE_DAYS) || 10,
   },
+  nfse: {
+    // NFS-e padrão nacional (Sefin Nacional). Desativada até o certificado e os dados fiscais existirem.
+    enabled: process.env.NFSE_ENABLED === 'true',
+    ambiente: process.env.NFSE_AMBIENTE === 'producao' ? 'producao' : 'homologacao',
+    apiUrl: process.env.NFSE_API_URL,
+    certBase64: process.env.NFSE_CERT_BASE64,
+    certPath: process.env.NFSE_CERT_PATH,
+    certPassword: process.env.NFSE_CERT_PASSWORD,
+  },
   uploads: {
     dir: process.env.UPLOAD_DIR || require('path').join(__dirname, 'uploads'),
     s3Bucket: process.env.S3_BUCKET,
@@ -62,9 +71,10 @@ const validateConfig = () => {
     console.error(`FATAL: configuração inválida:\n - ${errors.join('\n - ')}`);
     process.exit(1);
   }
-  if (isProduction && !config.smtp.host) console.warn('⚠️ SMTP não configurado: e-mails (convites, recuperação de senha) não serão enviados.');
-  if (isProduction && !config.stripe.secretKey) console.warn('⚠️ STRIPE_SECRET_KEY não configurada: pagamentos online desativados.');
-  if (config.stripe.secretKey && !config.stripe.webhookSecret) console.warn('⚠️ STRIPE_WEBHOOK_SECRET não configurado: faturas pagas não serão baixadas automaticamente.');
+  const logger = require('./utils/logger');
+  if (isProduction && !config.smtp.host) logger.warn('⚠️ SMTP não configurado: e-mails (convites, recuperação de senha) não serão enviados.');
+  if (isProduction && !config.stripe.secretKey) logger.warn('⚠️ STRIPE_SECRET_KEY não configurada: pagamentos online desativados.');
+  if (config.stripe.secretKey && !config.stripe.webhookSecret) logger.warn('⚠️ STRIPE_WEBHOOK_SECRET não configurado: faturas pagas não serão baixadas automaticamente.');
 };
 
 module.exports = { config, validateConfig };
