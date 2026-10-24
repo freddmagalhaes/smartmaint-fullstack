@@ -1,6 +1,6 @@
 # SmartMaint — somente a API (para quem hospeda o frontend separado, ex.: S3 + CloudFront).
 # Para o deploy padrão (frontend + API no mesmo container) use o Dockerfile principal.
-FROM node:20-alpine
+FROM node:22-alpine
 ENV NODE_ENV=production \
     PORT=3001 \
     UPLOAD_DIR=/app/uploads

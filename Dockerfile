@@ -2,7 +2,7 @@
 # O Node serve a API em /api, os arquivos em /uploads e o build do React nas demais rotas.
 
 # ---------- 1. Build do frontend ----------
-FROM node:20-alpine AS web
+FROM node:22-alpine AS web
 WORKDIR /app
 COPY package.json package-lock.json ./
 # --ignore-scripts: o postinstall instala o backend, que tem estágio próprio
@@ -13,13 +13,13 @@ COPY src ./src
 RUN npm run build
 
 # ---------- 2. Dependências de produção do backend ----------
-FROM node:20-alpine AS api-deps
+FROM node:22-alpine AS api-deps
 WORKDIR /app/server
 COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev
 
 # ---------- 3. Imagem final ----------
-FROM node:20-alpine
+FROM node:22-alpine
 ENV NODE_ENV=production \
     PORT=3001 \
     UPLOAD_DIR=/app/uploads

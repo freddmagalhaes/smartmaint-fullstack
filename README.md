@@ -40,12 +40,12 @@ As permissões são aplicadas no backend (a interface apenas esconde o que o per
 ## 🛠️ Tecnologias
 
 - **Frontend:** React 19, Vite, React Router, Recharts, Lucide.
-- **Backend:** Node.js 20+, Express 5, MySQL 8, zod, Stripe, Nodemailer, AWS S3 (opcional).
+- **Backend:** Node.js 22+, Express 5, MySQL 8, zod, Stripe, Nodemailer, AWS S3 (opcional).
 - **Testes:** `node:test` + `supertest` (integração com banco real).
 
 ## 📦 Rodando localmente
 
-Pré-requisitos: Node.js 20+ e MySQL 8 (ou MariaDB 10.6+).
+Pré-requisitos: Node.js 22+ e MySQL 8 (ou MariaDB 10.6+).
 
 ```bash
 # 1. Dependências (o postinstall também instala as do backend)

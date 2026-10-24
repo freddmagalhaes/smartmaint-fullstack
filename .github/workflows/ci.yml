@@ -10,10 +10,10 @@ jobs:
     name: Frontend (lint e build)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run lint
@@ -40,10 +40,10 @@ jobs:
       DB_USER: root
       DB_PASSWORD: root
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
@@ -57,5 +57,5 @@ jobs:
     name: Imagem Docker
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: docker build -t smartmaint:ci .
