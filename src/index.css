@@ -469,3 +469,18 @@ button:disabled {
   tr { break-inside: avoid; }
   .fade-in { animation: none !important; }
 }
+
+/* Etiquetas QR Code (folha A4, 3 colunas) */
+.label-sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.label-item { display: flex; gap: 10px; align-items: center; padding: 10px; background: white; border: 1px dashed #94a3b8; border-radius: 8px; break-inside: avoid; }
+.label-item p { overflow-wrap: break-word; }
+@media print {
+  .label-sheet { grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+  .label-item { border: 1px dashed #cbd5e1; border-radius: 2mm; padding: 3mm; min-height: 36mm; gap: 3mm; }
+  .label-item img { width: 26mm !important; height: 26mm !important; flex-shrink: 0; }
+  .label-item p:first-child { font-size: 12px !important; }
+}
+
+/* Aviso de uso sem internet */
+.offline-bar { display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: #fef3c7; color: #92400e; font-size: 13px; font-weight: 500; border-bottom: 1px solid #fde68a; }
+.offline-bar button { margin-left: auto; background: transparent; color: #92400e; font-weight: 700; text-decoration: underline; cursor: pointer; }

@@ -13,6 +13,10 @@ export const ROLES = {
 };
 
 const USER_KEY = 'sm_user';
+// Respostas da API guardadas para uso sem internet (ver vite.config.js): não podem passar de um usuário para outro
+const clearOfflineCache = () => {
+  if (typeof caches !== 'undefined') caches.delete('smartmaint-api').catch(() => {});
+};
 const TENANT_KEY = 'sm_tenant';
 
 const storage = {
@@ -60,6 +64,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const logout = useCallback(() => {
+    clearOfflineCache();
     setUser(null);
     setTokenState(null);
     setActiveTenant(null);
@@ -102,6 +107,7 @@ export const AuthProvider = ({ children }) => {
 
   /** Inicia a sessão com a resposta do login (ou da confirmação de e-mail do cadastro). */
   const startSession = useCallback(async (data) => {
+    clearOfflineCache();
     const formattedUser = formatUser(data);
     delete formattedUser.token;
     setToken(data.token);

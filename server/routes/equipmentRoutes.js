@@ -66,6 +66,39 @@ router.get('/equipments', requireRole(...TENANT_ROLES), tenantScope, async (req,
   }));
 });
 
+/**
+ * Ficha do equipamento aberta pelo QR Code: dados, O.S. em aberto, próximas preventivas e
+ * histórico recente. Disponível para todos os perfis do cliente (o técnico abre O.S. por ela).
+ */
+router.get('/equipments/:id/card', requireRole(...TENANT_ROLES), tenantScope, async (req, res) => {
+  const equipmentId = idParam(req);
+  const [equipment] = await query(
+    `SELECT e.id, e.name, e.type, e.model, e.serie, e.image, e.total_op_time, e.data_inicio, e.unit_id, u.name AS unit_name
+     FROM equipments e LEFT JOIN units u ON u.id = e.unit_id WHERE e.id = ? AND e.tenant_id = ?`,
+    [equipmentId, req.tenantId]
+  );
+  if (!equipment) throw new HttpError(404, 'Equipamento não encontrado');
+  const [openOrders, recent, plans, [lastFailure]] = await Promise.all([
+    query(
+      `SELECT id, titulo, tipo, prioridade, status, responsavel, data_criacao FROM work_orders
+       WHERE equipment_id = ? AND status <> 'Concluída'
+       ORDER BY FIELD(prioridade, 'Crítica', 'Alta', 'Média', 'Baixa'), id DESC LIMIT 20`,
+      [equipmentId]
+    ),
+    query(
+      `SELECT id, titulo, tipo, data_conclusao, tempo_reparo, responsavel FROM work_orders
+       WHERE equipment_id = ? AND status = 'Concluída' ORDER BY data_conclusao DESC, id DESC LIMIT 5`,
+      [equipmentId]
+    ),
+    query(
+      "SELECT id, title, next_due, interval_days FROM preventive_plans WHERE equipment_id = ? AND status = 'Ativo' ORDER BY next_due LIMIT 5",
+      [equipmentId]
+    ),
+    query('SELECT data_falha, descricao FROM failures WHERE equipment_id = ? ORDER BY data_falha DESC, id DESC LIMIT 1', [equipmentId]),
+  ]);
+  res.json({ ...equipment, open_orders: openOrders, recent_orders: recent, preventive_plans: plans, last_failure: lastFailure || null });
+});
+
 // Lista enxuta para campos de seleção e para o simulador (sem paginação, limitada)
 router.get('/equipments/options', requireRole(...TENANT_ROLES), tenantScope, async (req, res) => {
   const f = parse(filterSchema, req.query);

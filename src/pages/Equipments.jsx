@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { 
   Plus, Search, 
-  Calendar, Hash, Tag, Activity, X, Trash2, Edit2, Cpu, FileSpreadsheet
+  Calendar, Hash, Tag, Activity, X, Trash2, Edit2, Cpu, FileSpreadsheet, QrCode
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import ImportEquipmentsModal from '../components/ImportEquipmentsModal';
 import { toast } from 'sonner';
 import { useData } from '../contexts/DataContext';
@@ -91,6 +92,10 @@ const Equipments = () => {
           <p style={styles.pageSubtitle}>Visualize e gerencie todos os equipamentos da planta.</p>
         </div>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <Link to="/equipments/labels" style={styles.secondaryBtn}>
+            <QrCode size={18} />
+            Etiquetas QR
+          </Link>
           <button type="button" style={styles.secondaryBtn} onClick={() => setIsImportOpen(true)}>
             <FileSpreadsheet size={18} />
             Importar planilha
@@ -193,6 +198,9 @@ const Equipments = () => {
                 </td>
                 <td style={styles.td}>
                   <div style={{ display: 'flex', gap: '8px' }}>
+                    <Link to={`/equipamento/${eq.id}`} style={styles.actionBtn} title="Ficha e QR Code" aria-label={`Ficha e QR Code de ${eq.name}`}>
+                      <QrCode size={16} />
+                    </Link>
                     <button style={styles.actionBtn} title="Editar" aria-label={`Editar ${eq.name}`} onClick={() => handleOpenEdit(eq)}>
                       <Edit2 size={16} />
                     </button>

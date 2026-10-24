@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Plus, Search, 
   AlertCircle, Printer,
@@ -10,7 +10,7 @@ import { escapeHtml, formatDate, formatCurrency } from '../utils/format';
 import { usePagedList, useDebounced } from '../hooks/usePagedList';
 import Pagination from '../components/Pagination';
 import WorkOrderDetail from '../components/WorkOrderDetail';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
 
 const STATUS_FILTERS = [
   { value: 'abertas', label: 'Em aberto' },
@@ -79,6 +79,25 @@ const WorkOrders = () => {
     setIsModalOpen(true);
   };
 
+  // Vindo da ficha do equipamento (QR Code): /work-orders?new=1&equipment=ID abre o formulário preenchido
+  const newFromQr = searchParams.get('new') === '1';
+  const qrEquipment = searchParams.get('equipment');
+  // A ficha manda o nome junto: o equipamento pode não estar na lista (outra unidade selecionada)
+  const location = useLocation();
+  const [qrOption, setQrOption] = useState(null);
+  useEffect(() => {
+    if (!newFromQr) return;
+    setEditingId(null);
+    setFormData({
+      equipment_id: qrEquipment || equipments[0]?.id || '',
+      titulo: '', tipo: 'Corretiva', prioridade: 'Média',
+      status: 'Aberta', responsavel: users[0]?.name || '',
+    });
+    setQrOption(location.state?.equipment || null);
+    setIsModalOpen(true);
+    setSearchParams({}, { replace: true });
+  }, [newFromQr, qrEquipment, equipments, users, setSearchParams, location.state]);
+
   const handleOpenEdit = (os) => {
     setEditingId(os.id);
     setFormData({ ...os });
@@ -89,7 +108,8 @@ const WorkOrders = () => {
     e.preventDefault();
     const { equipment_id, titulo, descricao, tipo, prioridade, responsavel } = formData;
     const data = { equipment_id: Number(equipment_id), titulo, descricao, tipo, prioridade, responsavel };
-    const ok = editingId ? await updateWorkOrder(editingId, data) : await addWorkOrder(data);
+    // client_ref: identifica a O.S. criada neste aparelho; se o envio for repetido (ex.: sem internet), não duplica
+    const ok = editingId ? await updateWorkOrder(editingId, data) : await addWorkOrder({ ...data, client_ref: crypto.randomUUID() });
     if (ok) setIsModalOpen(false);
   };
 
@@ -302,6 +322,7 @@ const WorkOrders = () => {
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Equipamento</label>
                   <select style={styles.select} value={formData.equipment_id} onChange={(e) => setFormData({...formData, equipment_id: e.target.value})}>
+                    {qrOption && !equipments.some((eq) => eq.id === qrOption.id) && <option value={qrOption.id}>{qrOption.name}</option>}
                     {equipments.map(eq => <option key={eq.id} value={eq.id}>{eq.name}</option>)}
                   </select>
                 </div>

@@ -9,6 +9,7 @@ const migrations = [
   require('./006_assinaturas'),
   require('./007_lgpd_cadastro'),
   require('./008_relatorios_onboarding'),
+  require('./009_qrcode_offline'),
 ];
 
 const helpers = (q) => ({
