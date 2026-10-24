@@ -1,5 +1,18 @@
-node_modules
+# Nunca levar segredos para a imagem (vale para qualquer pasta)
+**/.env
+**/.env.*
+!**/.env.example
+
+**/node_modules
+**/npm-debug.log*
 dist
 build
 .git
-.env
+.github
+.vscode
+.idea
+
+# Arquivos enviados e testes não fazem parte da imagem
+**/uploads
+server/tests
+*.md

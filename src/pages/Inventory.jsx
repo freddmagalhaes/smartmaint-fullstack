@@ -36,25 +36,22 @@ const Inventory = () => {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const data = { 
-      ...formData, 
+    const data = {
+      name: formData.name,
+      sku: formData.sku,
       quantity: Number(formData.quantity),
       min_quantity: Number(formData.min_quantity),
       unit_price: Number(formData.unit_price)
     };
-    if (editingId) {
-      updateInventoryItem(editingId, data);
-    } else {
-      addInventoryItem(data);
-    }
-    setIsModalOpen(false);
+    const ok = editingId ? await updateInventoryItem(editingId, data) : await addInventoryItem(data);
+    if (ok) setIsModalOpen(false);
   };
 
   return (
     <div className="fade-in">
-      <header style={styles.header}>
+      <header className="page-header" style={styles.header}>
         <div>
           <h1 style={styles.pageTitle}>Estoque de Peças</h1>
           <p style={styles.pageSubtitle}>Gerencie o inventário de reposição para manutenções.</p>
@@ -80,6 +77,7 @@ const Inventory = () => {
 
       <div className="premium-card" style={{ overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
+          <div className="table-wrap">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border)' }}>
@@ -143,17 +141,18 @@ const Inventory = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 
       {isModalOpen && (
-        <div style={styles.modalOverlay}>
-          <div className="premium-card fade-in" style={styles.modal}>
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>{editingId ? 'Editar Peça' : 'Nova Peça'}</h3>
             </div>
             <form onSubmit={handleSubmit}>
-              <div style={styles.formGrid}>
+              <div className="form-grid" style={styles.formGrid}>
                 <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
                   <label style={styles.label}>Nome da Peça</label>
                   <input required style={styles.input} value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
@@ -197,7 +196,6 @@ const styles = {
   th: { padding: '16px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' },
   td: { padding: '16px 24px', fontSize: '14px', color: 'var(--text-main)', verticalAlign: 'middle' },
   iconBtn: { background: 'transparent', border: 'none', color: '#94a3b8', padding: '8px', cursor: 'pointer', borderRadius: '6px', transition: '0.2s' },
-  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { width: '100%', maxWidth: '600px', padding: '32px', background: 'white' },
   modalHeader: { marginBottom: '24px' },
   modalTitle: { fontSize: '20px', fontWeight: '700' },

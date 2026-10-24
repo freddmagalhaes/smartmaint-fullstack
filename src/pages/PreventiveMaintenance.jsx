@@ -4,9 +4,12 @@ import {
   Edit2, Trash2, Clock, CheckCircle2, AlertCircle
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
+import { useConfirm } from '../components/ConfirmDialog';
+import { formatDate, todayISO } from '../utils/format';
 
 const PreventiveMaintenance = () => {
   const { preventivePlans, equipments, addPreventivePlan, updatePreventivePlan, deletePreventivePlan } = useData();
+  const confirm = useConfirm();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -39,32 +42,29 @@ const PreventiveMaintenance = () => {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const data = { 
-      ...formData, 
+    const data = {
       equipment_id: Number(formData.equipment_id),
-      interval_days: Number(formData.interval_days)
+      title: formData.title,
+      description: formData.description,
+      interval_days: Number(formData.interval_days),
+      status: formData.status,
     };
-    if (editingId) {
-      updatePreventivePlan(editingId, data);
-    } else {
-      addPreventivePlan(data);
-    }
-    setIsModalOpen(false);
+    const ok = editingId ? await updatePreventivePlan(editingId, data) : await addPreventivePlan(data);
+    if (ok) setIsModalOpen(false);
   };
 
-  const handleExecute = (id) => {
-    if(window.confirm('Marcar este plano como executado hoje? Isso reiniciará o ciclo.')) {
-      updatePreventivePlan(id, { reset_due: true });
-    }
+  const handleExecute = async (id) => {
+    const confirmed = await confirm('Marcar este plano como executado hoje? O próximo vencimento será recalculado.', { title: 'Registrar execução', confirmLabel: 'Registrar', danger: false });
+    if (confirmed) updatePreventivePlan(id, { reset_due: true });
   };
 
   const getStatusColor = (status) => status === 'Ativo' ? 'var(--success)' : 'var(--text-muted)';
 
   return (
     <div className="fade-in">
-      <header style={styles.header}>
+      <header className="page-header" style={styles.header}>
         <div>
           <h1 style={styles.pageTitle}>Planos Preventivos</h1>
           <p style={styles.pageSubtitle}>Agende e controle manutenções recorrentes nos equipamentos.</p>
@@ -90,6 +90,7 @@ const PreventiveMaintenance = () => {
 
       <div className="premium-card" style={{ overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
+          <div className="table-wrap">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border)' }}>
@@ -103,7 +104,7 @@ const PreventiveMaintenance = () => {
             </thead>
             <tbody>
               {filteredPlans.length > 0 ? filteredPlans.map(plan => {
-                const isLate = new Date(plan.next_due) < new Date() && plan.status === 'Ativo';
+                const isLate = plan.next_due && plan.next_due < todayISO() && plan.status === 'Ativo';
                 return (
                   <tr key={plan.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={styles.td}>
@@ -128,11 +129,11 @@ const PreventiveMaintenance = () => {
                     <td style={styles.td}>
                       {isLate ? (
                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--danger)', fontSize: '13px', fontWeight: '600' }}>
-                           <AlertCircle size={14} /> {new Date(plan.next_due).toLocaleDateString('pt-BR')} (Atrasado)
+                           <AlertCircle size={14} /> {formatDate(plan.next_due)} (Atrasado)
                          </div>
                       ) : (
                         <div style={{ fontSize: '13px', color: 'var(--text-main)' }}>
-                          {new Date(plan.next_due).toLocaleDateString('pt-BR')}
+                          {formatDate(plan.next_due)}
                         </div>
                       )}
                     </td>
@@ -162,17 +163,18 @@ const PreventiveMaintenance = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 
       {isModalOpen && (
-        <div style={styles.modalOverlay}>
-          <div className="premium-card fade-in" style={styles.modal}>
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>{editingId ? 'Editar Plano' : 'Novo Plano Preventivo'}</h3>
             </div>
             <form onSubmit={handleSubmit}>
-              <div style={styles.formGrid}>
+              <div className="form-grid" style={styles.formGrid}>
                 <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
                   <label style={styles.label}>Título do Plano</label>
                   <input required style={styles.input} value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} placeholder="Ex: Troca de Óleo Mensal" />
@@ -223,7 +225,6 @@ const styles = {
   iconBtn: { background: 'transparent', border: 'none', color: '#94a3b8', padding: '6px', cursor: 'pointer', borderRadius: '6px', transition: '0.2s' },
   statusBadge: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' },
   statusDot: { width: '8px', height: '8px', borderRadius: '50%' },
-  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { width: '100%', maxWidth: '600px', padding: '32px', background: 'white' },
   modalHeader: { marginBottom: '24px' },
   modalTitle: { fontSize: '20px', fontWeight: '700' },

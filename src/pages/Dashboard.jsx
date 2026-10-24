@@ -15,9 +15,10 @@ const Dashboard = () => {
 
   // Cálculos Globais baseados no tenant
   const metrics = useMemo(() => {
-    const totalOpTime = equipments.reduce((acc, eq) => acc + eq.total_op_time, 0);
+    // DECIMAL chega da API como texto: converter antes de somar
+    const totalOpTime = equipments.reduce((acc, eq) => acc + Number(eq.total_op_time || 0), 0);
     const totalFailures = failures.length;
-    const totalRepairTime = repairs.reduce((acc, rep) => acc + rep.tempo_reparo, 0);
+    const totalRepairTime = repairs.reduce((acc, rep) => acc + Number(rep.tempo_reparo || 0), 0);
     const totalRepairs = repairs.length;
 
     const mtbf = calculateMTBF(totalOpTime, totalFailures);
@@ -45,19 +46,35 @@ const Dashboard = () => {
 
   const COLORS = ['#3b82f6', '#f59e0b', '#10b981'];
 
-  // Dados simulados para histórico
-  const chartData = [
-    { name: 'Jan', falhas: 0, disponibilidade: 99.5 },
-    { name: 'Fev', falhas: 1, disponibilidade: 98.2 },
-    { name: 'Mar', falhas: 0, disponibilidade: 99.8 },
-    { name: 'Abr', falhas: 2, disponibilidade: 96.5 },
-    { name: 'Mai', falhas: 1, disponibilidade: 98.9 },
-    { name: 'Jun', falhas: 0, disponibilidade: 99.2 },
-  ];
+  // Histórico real dos últimos 6 meses: falhas registradas e horas de reparo
+  const chartData = useMemo(() => {
+    const now = new Date();
+    const months = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const name = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+      return { key, name, falhas: 0, horasReparo: 0 };
+    });
+    const byKey = Object.fromEntries(months.map((m) => [m.key, m]));
+    failures.forEach((f) => { const m = byKey[String(f.data_falha || '').slice(0, 7)]; if (m) m.falhas += 1; });
+    repairs.forEach((r) => { const m = byKey[String(r.data_reparo || '').slice(0, 7)]; if (m) m.horasReparo += Number(r.tempo_reparo || 0); });
+    return months;
+  }, [failures, repairs]);
+
+  // Equipamentos com mais O.S. em aberto
+  const criticalAssets = useMemo(() => {
+    const open = {};
+    workOrders.filter((os) => os.status !== 'Concluída').forEach((os) => { open[os.equipment_id] = (open[os.equipment_id] || 0) + 1; });
+    return equipments
+      .map((eq) => ({ name: eq.name, abertas: open[eq.id] || 0 }))
+      .filter((eq) => eq.abertas > 0)
+      .sort((a, b) => b.abertas - a.abertas)
+      .slice(0, 6);
+  }, [equipments, workOrders]);
 
   return (
     <div className="fade-in">
-      <header style={styles.header}>
+      <header className="page-header" style={styles.header}>
         <div>
           <h1 style={styles.pageTitle}>Dashboard Operacional</h1>
           <p style={styles.pageSubtitle}>Monitoramento de confiabilidade e performance de ativos em tempo real.</p>
@@ -76,7 +93,6 @@ const Dashboard = () => {
           icon={Activity}
           color="var(--success)"
           subtitle="Média da frota total"
-          trend={1.2}
         />
         <StatCard 
           title="O.S. Ativas" 
@@ -91,7 +107,6 @@ const Dashboard = () => {
           icon={Zap}
           color="var(--warning)"
           subtitle="Tempo médio entre falhas"
-          trend={5.4}
         />
         <StatCard 
           title="Taxa de Falha" 
@@ -107,7 +122,7 @@ const Dashboard = () => {
         {/* Gráfico de Evolução */}
         <div className="premium-card" style={styles.chartContainer}>
           <div style={styles.chartHeader}>
-            <h3 style={styles.chartTitle}>Performance de Disponibilidade</h3>
+            <h3 style={styles.chartTitle}>Falhas e Horas de Reparo</h3>
             <p style={styles.chartSubtitle}>Histórico dos últimos 6 meses</p>
           </div>
           <div style={{ height: '280px', width: '100%' }}>
@@ -121,9 +136,10 @@ const Dashboard = () => {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: 'var(--text-muted)', fontSize: 12}} />
-                <YAxis hide domain={[90, 100]} />
+                <YAxis allowDecimals={false} axisLine={false} tickLine={false} width={32} tick={{fill: 'var(--text-muted)', fontSize: 12}} />
                 <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: 'var(--shadow-lg)' }} />
-                <Area type="monotone" dataKey="disponibilidade" stroke="var(--primary)" fillOpacity={1} fill="url(#colorDisp)" strokeWidth={3} />
+                <Area type="monotone" name="Horas de reparo" dataKey="horasReparo" stroke="var(--primary)" fillOpacity={1} fill="url(#colorDisp)" strokeWidth={3} />
+                <Area type="monotone" name="Falhas" dataKey="falhas" stroke="var(--danger)" fill="transparent" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -166,26 +182,30 @@ const Dashboard = () => {
         </div>
 
         {/* Top Ativos Críticos */}
-        <div className="premium-card" style={{...styles.chartContainer, gridColumn: 'span 2'}}>
+        <div className="premium-card" style={{...styles.chartContainer, gridColumn: '1 / -1'}}>
           <div style={styles.chartHeader}>
             <h3 style={styles.chartTitle}>Ranking de Criticidade por Ativo</h3>
             <p style={styles.chartSubtitle}>Equipamentos com maior número de O.S. abertas</p>
           </div>
+          {criticalAssets.length === 0 ? (
+            <p style={{ fontSize: '14px', color: 'var(--text-muted)', padding: '24px 0' }}>Nenhum equipamento com O.S. em aberto.</p>
+          ) : (
           <div style={{ height: '250px', width: '100%' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={equipments.slice(0, 6)}>
+              <BarChart data={criticalAssets}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: 'var(--text-muted)', fontSize: 11}} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: 'var(--text-muted)', fontSize: 12}} />
+                <YAxis allowDecimals={false} axisLine={false} tickLine={false} width={32} tick={{fill: 'var(--text-muted)', fontSize: 12}} />
                 <Tooltip cursor={{fill: 'rgba(30, 58, 138, 0.05)'}} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: 'var(--shadow-lg)' }} />
-                <Bar dataKey="id" radius={[4, 4, 0, 0]} barSize={40}>
-                  {equipments.map((entry, index) => (
+                <Bar name="O.S. em aberto" dataKey="abertas" radius={[4, 4, 0, 0]} barSize={40}>
+                  {criticalAssets.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={index === 0 ? 'var(--danger)' : 'var(--primary)'} fillOpacity={0.8} />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
+          )}
         </div>
       </div>
     </div>
@@ -197,7 +217,7 @@ const styles = {
   pageTitle: { fontSize: '24px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' },
   pageSubtitle: { fontSize: '14px', color: 'var(--text-muted)' },
   dateBadge: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: 'white', borderRadius: '20px', border: '1px solid var(--border)', fontSize: '13px', fontWeight: '600', color: 'var(--text-main)', textTransform: 'capitalize' },
-  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '24px', marginBottom: '32px' },
+  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '24px', marginBottom: '32px' },
   card: { padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' },
   cardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   iconContainer: { width: '42px', height: '42px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
@@ -206,7 +226,7 @@ const styles = {
   cardTitle: { fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' },
   cardValue: { fontSize: '28px', fontWeight: '700', color: 'var(--text-main)', letterSpacing: '-0.5px' },
   cardSubtitle: { fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' },
-  chartsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' },
+  chartsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 400px), 1fr))', gap: '24px' },
   chartContainer: { padding: '24px' },
   chartHeader: { marginBottom: '24px' },
   chartTitle: { fontSize: '16px', fontWeight: '700', color: 'var(--text-main)' },

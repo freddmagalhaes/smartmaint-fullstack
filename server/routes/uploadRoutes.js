@@ -1,54 +1,66 @@
 const express = require('express');
-const router = express.Router();
 const multer = require('multer');
-const path = require('path');
 const crypto = require('crypto');
-const authMiddleware = require('../middleware/auth');
+const storage = require('../utils/storage');
+const { HttpError } = require('../utils/errorHandler');
+const { MANAGERS, requireRole, tenantScope } = require('../middleware/rbac');
 
-// Configuração do Multer para Uploads Seguros
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/');
-  },
-  filename: (req, file, cb) => {
-    // Usando randomUUID para garantir nomes únicos e difíceis de adivinhar
-    const uniqueSuffix = crypto.randomUUID();
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname).toLowerCase());
-  }
+// Tipos aceitos, identificados pelo conteúdo do arquivo (assinatura), não pela extensão enviada
+const FILE_TYPES = [
+  { ext: 'png', mime: 'image/png', test: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
+  { ext: 'jpg', mime: 'image/jpeg', test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  { ext: 'webp', mime: 'image/webp', test: (b) => b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WEBP' },
+  { ext: 'pdf', mime: 'application/pdf', test: (b) => b.subarray(0, 5).toString() === '%PDF-' },
+];
+const MIME_BY_EXT = Object.fromEntries(FILE_TYPES.map((t) => [t.ext, t.mime]));
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
+
+// Rotas autenticadas (montadas em /api)
+const apiRouter = express.Router();
+
+apiRouter.post('/upload', requireRole(...MANAGERS), tenantScope, upload.single('file'), async (req, res) => {
+  if (!req.file) throw new HttpError(400, 'Nenhum arquivo enviado');
+  const type = FILE_TYPES.find((t) => t.test(req.file.buffer));
+  if (!type) throw new HttpError(400, 'Tipo de arquivo não permitido. Envie PNG, JPG, WEBP ou PDF.');
+
+  // Nome aleatório (UUID) torna o endereço impossível de adivinhar; a pasta separa os arquivos por cliente
+  const key = `${req.tenantId}/${crypto.randomUUID()}.${type.ext}`;
+  await storage.save(key, req.file.buffer, type.mime);
+  res.status(201).json({ url: `/uploads/${key}` });
 });
 
-// Filtro para aceitar apenas imagens e documentos seguros
-const fileFilter = (req, file, cb) => {
-  const allowedExtensions = ['.png', '.jpg', '.jpeg', '.pdf', '.doc', '.docx'];
-  const ext = path.extname(file.originalname).toLowerCase();
-  
-  if (allowedExtensions.includes(ext)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Extensão de arquivo não permitida. Apenas imagens e documentos são aceitos.'));
-  }
+// Entrega dos arquivos (montada em /uploads, pública para funcionar em <img src>)
+const fileRouter = express.Router();
+const SAFE_SEGMENT = /^[a-z0-9][a-z0-9._-]{0,99}$/i;
+
+const sendFile = async (key, res) => {
+  const ext = key.split('.').pop().toLowerCase();
+  const mime = MIME_BY_EXT[ext === 'jpeg' ? 'jpg' : ext];
+  if (!mime) return res.status(404).end();
+  const stream = await storage.read(key);
+  if (!stream) return res.status(404).end();
+  res.set({
+    'Content-Type': mime,
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'private, max-age=86400',
+    'Content-Security-Policy': "default-src 'none'",
+  });
+  stream.on('error', () => res.destroy());
+  stream.pipe(res);
 };
 
-const upload = multer({ 
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+fileRouter.get('/:tenant/:file', async (req, res) => {
+  const { tenant, file } = req.params;
+  if (!SAFE_SEGMENT.test(tenant) || !SAFE_SEGMENT.test(file) || file.includes('..')) return res.status(404).end();
+  await sendFile(`${tenant}/${file}`, res);
 });
 
-// --- UPLOADS ---
-router.post('/upload', authMiddleware, upload.single('file'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'Nenhum arquivo enviado' });
-  }
-  res.json({ url: `/uploads/${req.file.filename}` });
+// Arquivos enviados antes da separação por cliente (uploads/file-<uuid>.ext)
+fileRouter.get('/:file', async (req, res) => {
+  const { file } = req.params;
+  if (!/^file-[0-9a-f-]{36}\.(png|jpe?g|pdf)$/i.test(file)) return res.status(404).end();
+  await sendFile(file, res);
 });
 
-// Handler de erros do Multer (opcional, para capturar fileFilter)
-router.use((err, req, res, next) => {
-  if (err instanceof multer.MulterError || err.message.includes('não permitida')) {
-    return res.status(400).json({ error: err.message });
-  }
-  next(err);
-});
-
-module.exports = router;
+module.exports = { apiRouter, fileRouter };
