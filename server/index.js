@@ -1,6 +1,9 @@
 const { config, validateConfig } = require('./config');
+const logger = require('./utils/logger');
+const { initSentry } = require('./utils/sentry');
 
 validateConfig();
+initSentry();
 
 const app = require('./app');
 const db = require('./db');
@@ -12,12 +15,12 @@ const start = async () => {
   startBillingScheduler();
 
   const server = app.listen(config.port, () => {
-    console.log(`🚀 Servidor SmartMaint rodando na porta ${config.port}`);
+    logger.info({ port: config.port }, 'Servidor SmartMaint iniciado');
   });
 
   // Encerramento gracioso (deploys e escalonamento no ECS/Beanstalk enviam SIGTERM)
   const shutdown = (signal) => {
-    console.log(`${signal} recebido, encerrando...`);
+    logger.info({ signal }, 'encerrando');
     server.close(() => db.end().finally(() => process.exit(0)));
     setTimeout(() => process.exit(1), 10000).unref();
   };
@@ -26,6 +29,6 @@ const start = async () => {
 };
 
 start().catch((err) => {
-  console.error('Falha ao iniciar o servidor:', err);
+  logger.fatal({ err }, 'falha ao iniciar o servidor');
   process.exit(1);
 });

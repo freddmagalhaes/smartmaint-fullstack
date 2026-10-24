@@ -3,6 +3,8 @@ const db = require('../db');
 const { query, assertAffected, buildUpdate } = require('../utils/routeHelpers');
 const { HttpError } = require('../utils/errorHandler');
 const { initialPassword, sendInvite } = require('../utils/passwords');
+const { assertWithinLimit } = require('../utils/plans');
+const { audit } = require('../utils/audit');
 const {
   ROLES, TENANT_ROLES, isBackoffice, requireRole, requireBackoffice, requireMaster, tenantScope,
 } = require('../middleware/rbac');
@@ -13,6 +15,23 @@ const router = express.Router();
 const TENANT_STATUSES = ['Ativo', 'Inadimplente', 'Cancelado', 'Trial'];
 const tenantSlug = z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]{1,49}$/, 'use apenas letras minúsculas, números e hífen (2 a 50 caracteres)');
 const tenantParam = (req) => parse(z.object({ id: tenantSlug }), req.params).id;
+
+// Dados cadastrais usados como tomador na NFS-e
+const digits = (max) => z.string().trim().transform((v) => v.replace(/\D/g, '')).pipe(z.string().max(max)).nullish();
+const billingDataSchema = z.object({
+  razao_social: optionalText(),
+  cnpj: digits(14),
+  email_financeiro: email.nullish().or(z.literal('').transform(() => null)),
+  cep: digits(8),
+  logradouro: optionalText(),
+  numero: optionalText(20),
+  complemento: optionalText(100),
+  bairro: optionalText(100),
+  municipio_ibge: digits(7),
+  cidade: optionalText(100),
+  uf: z.string().trim().toUpperCase().length(2).nullish().or(z.literal('').transform(() => null)),
+});
+const BILLING_COLUMNS = Object.keys(billingDataSchema.shape);
 
 // --- BACKOFFICE: CLIENTES ---
 router.get('/admin/tenants', requireBackoffice, async (req, res) => {
@@ -46,6 +65,7 @@ router.post('/admin/tenants', requireBackoffice, async (req, res) => {
       'INSERT INTO tenants (id, name, plan_type, contact_email, contact_phone) VALUES (?, ?, ?, ?, ?)',
       [data.id, data.name, data.plan_type || 'Pro', data.contact_email, data.contact_phone || null]
     );
+    await q("INSERT INTO units (tenant_id, name) VALUES (?, 'Unidade Principal')", [data.id]);
     const adminName = data.admin_name || `Admin ${data.name}`;
     const result = await q(
       'INSERT INTO users (tenant_id, name, email, role, password) VALUES (?, ?, ?, ?, ?)',
@@ -55,19 +75,21 @@ router.post('/admin/tenants', requireBackoffice, async (req, res) => {
   });
 
   const inviteSent = await sendInvite(query, admin, data.name);
+  await audit(req, { action: 'create', entity: 'tenant', entityId: data.id, changes: data, tenantId: data.id });
   res.status(201).json({ message: 'Cliente cadastrado', id: data.id, invite_sent: inviteSent });
 });
 
 router.put('/admin/tenants/:id', requireBackoffice, async (req, res) => {
   const tenantId = tenantParam(req);
-  const data = parse(z.object({
+  const data = parse(billingDataSchema.extend({
     name: text().optional(),
     plan_type: text(50).optional(),
     contact_email: email.optional(),
     contact_phone: optionalText(50),
   }), req.body);
-  const { sql, params } = buildUpdate(data, ['name', 'plan_type', 'contact_email', 'contact_phone']);
+  const { sql, params } = buildUpdate(data, ['name', 'plan_type', 'contact_email', 'contact_phone', ...BILLING_COLUMNS]);
   assertAffected(await query(`UPDATE tenants SET ${sql} WHERE id = ?`, [...params, tenantId]), 'Cliente não encontrado');
+  await audit(req, { action: 'update', entity: 'tenant', entityId: tenantId, changes: data, tenantId });
   res.json({ message: 'Cliente atualizado' });
 });
 
@@ -75,12 +97,15 @@ router.put('/admin/tenants/:id/status', requireBackoffice, async (req, res) => {
   const tenantId = tenantParam(req);
   const { status } = parse(z.object({ status: z.enum(TENANT_STATUSES) }), req.body);
   assertAffected(await query('UPDATE tenants SET status = ? WHERE id = ?', [status, tenantId]), 'Cliente não encontrado');
+  await audit(req, { action: `status:${status}`, entity: 'tenant', entityId: tenantId, tenantId });
   res.json({ message: 'Status atualizado' });
 });
 
 router.delete('/admin/tenants/:id', requireMaster, async (req, res) => {
   const tenantId = tenantParam(req);
   assertAffected(await query('DELETE FROM tenants WHERE id = ?', [tenantId]), 'Cliente não encontrado');
+  // audit_logs não tem FK: o registro da exclusão fica no log do backoffice (tenant_id nulo)
+  await audit(req, { action: 'delete', entity: 'tenant', entityId: tenantId, tenantId: null });
   res.json({ message: 'Cliente excluído permanentemente' });
 });
 
@@ -99,6 +124,7 @@ router.put('/admin/tenants/:id/contract', requireBackoffice, async (req, res) =>
 
   const { sql, params } = buildUpdate(data, ['contrato_inicio', 'contrato_fim', 'renovacao_auto', 'valor_mensal', 'plan_type', 'status']);
   assertAffected(await query(`UPDATE tenants SET ${sql} WHERE id = ?`, [...params, tenantId]), 'Cliente não encontrado');
+  await audit(req, { action: 'update_contract', entity: 'tenant', entityId: tenantId, changes: data, tenantId });
   res.json({ message: 'Contrato atualizado' });
 });
 
@@ -117,6 +143,7 @@ router.post('/admin/users', requireMaster, async (req, res) => {
   );
   const user = { id: result.insertId, name: data.name, email: data.email };
   const inviteSent = invite ? await sendInvite(query, user, null) : false;
+  await audit(req, { action: 'create', entity: 'support_user', entityId: user.id, changes: { name: data.name, email: data.email }, tenantId: null });
   res.status(201).json({ ...user, role: ROLES.SUPPORT, invite_sent: inviteSent });
 });
 
@@ -129,14 +156,14 @@ router.get('/tenants', async (req, res) => {
 });
 
 router.put('/tenant', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
-  const data = parse(z.object({
+  const data = parse(billingDataSchema.extend({
     name: text().optional(),
-    cnpj: optionalText(20),
     contact_email: email.optional(),
     contact_phone: optionalText(50),
   }), req.body);
-  const { sql, params } = buildUpdate(data, ['name', 'cnpj', 'contact_email', 'contact_phone']);
+  const { sql, params } = buildUpdate(data, ['name', 'contact_email', 'contact_phone', ...BILLING_COLUMNS]);
   await query(`UPDATE tenants SET ${sql} WHERE id = ?`, [...params, req.tenantId]);
+  await audit(req, { action: 'update', entity: 'tenant', entityId: req.tenantId, changes: data });
   res.json({ message: 'Dados da empresa atualizados' });
 });
 
@@ -156,6 +183,7 @@ router.post('/users', requireRole(ROLES.ADMIN), tenantScope, async (req, res) =>
     password: password.optional().or(z.literal('')),
   }), req.body);
 
+  await assertWithinLimit(req.tenantId, 'users');
   const { hash, invite } = await initialPassword(data.password || null);
   const result = await query(
     'INSERT INTO users (tenant_id, name, email, role, password) VALUES (?, ?, ?, ?, ?)',
@@ -167,6 +195,7 @@ router.post('/users', requireRole(ROLES.ADMIN), tenantScope, async (req, res) =>
     const [tenant] = await query('SELECT name FROM tenants WHERE id = ?', [req.tenantId]);
     inviteSent = await sendInvite(query, user, tenant?.name);
   }
+  await audit(req, { action: 'create', entity: 'user', entityId: user.id, changes: { name: data.name, email: data.email, role: data.role } });
   res.status(201).json({ ...user, role: data.role, tenant_id: req.tenantId, invite_sent: inviteSent });
 });
 
@@ -181,6 +210,7 @@ router.put('/users/:id', requireRole(ROLES.ADMIN), tenantScope, async (req, res)
     await query(`UPDATE users SET ${sql} WHERE id = ? AND tenant_id = ? AND is_master = FALSE`, [...params, userId, req.tenantId]),
     'Usuário não encontrado'
   );
+  await audit(req, { action: 'update', entity: 'user', entityId: userId, changes: data });
   res.json({ message: 'Usuário atualizado' });
 });
 
@@ -191,6 +221,7 @@ router.delete('/users/:id', requireRole(ROLES.ADMIN), tenantScope, async (req, r
     await query('DELETE FROM users WHERE id = ? AND tenant_id = ? AND is_master = FALSE', [userId, req.tenantId]),
     'Usuário não encontrado'
   );
+  await audit(req, { action: 'delete', entity: 'user', entityId: userId });
   res.json({ message: 'Usuário excluído' });
 });
 

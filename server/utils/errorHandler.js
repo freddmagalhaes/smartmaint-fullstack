@@ -1,5 +1,7 @@
 const multer = require('multer');
 const { config } = require('../config');
+const logger = require('./logger');
+const { captureException } = require('./sentry');
 
 class HttpError extends Error {
   constructor(status, message, code) {
@@ -31,8 +33,9 @@ const errorHandler = (err, req, res, next) => {
     return res.status(400).json({ error: 'Registro relacionado não encontrado' });
   }
 
-  console.error(`[Erro] ${req.method} ${req.originalUrl}:`, err);
-  const body = { error: 'Erro interno no servidor' };
+  (req.log || logger).error({ err }, 'erro não tratado');
+  captureException(err, req);
+  const body = { error: 'Erro interno no servidor', request_id: req.id };
   if (!config.isProduction) body.details = err.message;
   return res.status(500).json(body);
 };

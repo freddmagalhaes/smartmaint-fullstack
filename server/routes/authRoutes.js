@@ -9,6 +9,7 @@ const { signToken, BLOCKED_STATUSES } = require('../middleware/auth');
 const { isBackoffice } = require('../middleware/rbac');
 const { parse, z, email, password, id } = require('../utils/validate');
 const { config } = require('../config');
+const { audit } = require('../utils/audit');
 
 const router = express.Router();
 
@@ -50,7 +51,10 @@ router.post('/login', loginLimiter, async (req, res) => {
   const rows = await query('SELECT * FROM users WHERE email = ?', [userEmail]);
   const user = rows[0];
   const isValid = await bcrypt.compare(plain, user ? user.password : DUMMY_HASH);
-  if (!user || !isValid) throw new HttpError(401, 'Credenciais inválidas');
+  if (!user || !isValid) {
+    if (user) await audit({ ip: req.ip, user }, { action: 'login_failed', entity: 'user', entityId: user.id, tenantId: user.tenant_id });
+    throw new HttpError(401, 'Credenciais inválidas');
+  }
 
   if (!isBackoffice(user)) {
     const tenantRows = await query('SELECT status FROM tenants WHERE id = ?', [user.tenant_id]);
@@ -59,6 +63,7 @@ router.post('/login', loginLimiter, async (req, res) => {
     }
   }
 
+  await audit({ ip: req.ip, user }, { action: 'login', entity: 'user', entityId: user.id, tenantId: user.tenant_id });
   res.json({ ...publicUser(user), token: signToken(user) });
 });
 
@@ -83,7 +88,7 @@ router.post('/auth/reset-password', recoveryLimiter, async (req, res) => {
     newPassword: password,
   }), req.body);
 
-  const rows = await query('SELECT reset_token, reset_token_expiry FROM users WHERE id = ?', [data.id]);
+  const rows = await query('SELECT tenant_id, reset_token, reset_token_expiry FROM users WHERE id = ?', [data.id]);
   const user = rows[0];
   if (!user || !user.reset_token || !user.reset_token_expiry) throw new HttpError(400, 'Link inválido ou expirado.');
   if (new Date() > new Date(user.reset_token_expiry)) throw new HttpError(400, 'Link expirado. Solicite novamente.');
@@ -94,6 +99,7 @@ router.post('/auth/reset-password', recoveryLimiter, async (req, res) => {
     'UPDATE users SET password = ?, reset_token = NULL, reset_token_expiry = NULL, token_version = token_version + 1 WHERE id = ?',
     [await hashPassword(data.newPassword), data.id]
   );
+  await audit({ ip: req.ip, user: { id: data.id } }, { action: 'password_reset', entity: 'user', entityId: data.id, tenantId: user.tenant_id });
   res.json({ message: 'Senha alterada com sucesso!' });
 });
 

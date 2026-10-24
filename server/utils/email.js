@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const { config } = require('../config');
+const logger = require('./logger');
 
 const transporter = config.smtp.host
   ? nodemailer.createTransport({
@@ -32,7 +33,7 @@ const sendEmail = async (to, subject, html) => {
     await transporter.sendMail({ from: `"SmartMaint" <${config.smtp.from}>`, to, subject, html });
     return true;
   } catch (error) {
-    console.error('Erro ao enviar e-mail:', error.message);
+    logger.error({ err: error, to }, 'erro ao enviar e-mail');
     return false;
   }
 };

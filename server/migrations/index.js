@@ -4,6 +4,7 @@ const migrations = [
   require('./001_initial'),
   require('./002_hardening'),
   require('./003_invalidate_default_passwords'),
+  require('./004_multicliente'),
 ];
 
 const helpers = (q) => ({
@@ -18,6 +19,13 @@ const helpers = (q) => ({
     if (!(await this.columnExists(table, column))) {
       await q(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
     }
+  },
+  addIndex: async (table, name, columns) => {
+    const rows = await q(
+      'SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?',
+      [table, name]
+    );
+    if (rows.length === 0) await q(`ALTER TABLE \`${table}\` ADD INDEX \`${name}\` ${columns}`);
   },
   // Remove a FK existente na coluna (nome gerado automaticamente pelo MySQL) e cria a nova definição
   replaceForeignKey: async (table, column, definition) => {

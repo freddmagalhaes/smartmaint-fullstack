@@ -1,14 +1,18 @@
 const db = require('../db');
 const { config } = require('../config');
+const logger = require('./logger');
+const { enqueueForInvoice } = require('./nfse');
 
 /**
  * Marca a fatura como paga e, se o cliente estava bloqueado por inadimplência e não
  * restaram faturas atrasadas, reativa o acesso.
  */
 const markInvoicePaid = async (invoiceId, sessionId) => db.transaction(async (q) => {
-  const [invoice] = await q('SELECT id, tenant_id, status FROM invoices WHERE id = ? FOR UPDATE', [invoiceId]);
+  const [invoice] = await q('SELECT id, tenant_id, status, valor FROM invoices WHERE id = ? FOR UPDATE', [invoiceId]);
   if (!invoice || invoice.status === 'Paga') return false;
   await q("UPDATE invoices SET status = 'Paga', paid_at = NOW(), stripe_session_id = COALESCE(?, stripe_session_id) WHERE id = ?", [sessionId || null, invoiceId]);
+  // Toda fatura paga gera uma NFS-e pendente; a emissão ocorre quando a integração fiscal estiver ativa
+  await enqueueForInvoice(q, invoice);
   const [{ overdue }] = await q("SELECT COUNT(*) AS overdue FROM invoices WHERE tenant_id = ? AND status = 'Atrasada'", [invoice.tenant_id]);
   if (overdue === 0) {
     await q("UPDATE tenants SET status = 'Ativo' WHERE id = ? AND status = 'Inadimplente'", [invoice.tenant_id]);
@@ -37,8 +41,8 @@ const runBillingCycle = async () => {
 const startBillingScheduler = () => {
   if (!config.billing.autoBlock) return null;
   const run = () => runBillingCycle()
-    .then((r) => { if (r.invoicesLate || r.tenantsBlocked) console.log('[cobrança]', r); })
-    .catch((err) => console.error('[cobrança] falha na rotina:', err.message));
+    .then((r) => { if (r.invoicesLate || r.tenantsBlocked) logger.info(r, 'rotina de cobrança'); })
+    .catch((err) => logger.error({ err }, 'falha na rotina de cobrança'));
   run();
   const timer = setInterval(run, 60 * 60 * 1000);
   timer.unref();

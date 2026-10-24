@@ -6,6 +6,7 @@ const { markInvoicePaid } = require('../utils/billing');
 const { ROLES, requireRole, requireBackoffice, tenantScope } = require('../middleware/rbac');
 const { parse, z, id, date, text, idParam } = require('../utils/validate');
 const { config } = require('../config');
+const { audit } = require('../utils/audit');
 
 const router = express.Router();
 
@@ -35,6 +36,7 @@ router.post('/admin/invoices', requireBackoffice, async (req, res) => {
     'INSERT INTO invoices (tenant_id, valor, vencimento, status, mes_ref, paid_at) VALUES (?, ?, ?, ?, ?, ?)',
     [d.tenant_id, d.valor, d.vencimento, d.status, d.mes_ref, d.status === 'Paga' ? new Date() : null]
   );
+  await audit(req, { action: 'create', entity: 'invoice', entityId: result.insertId, changes: d, tenantId: d.tenant_id });
   res.status(201).json({ id: result.insertId, ...d });
 });
 
@@ -49,6 +51,7 @@ router.put('/admin/invoices/:id/status', requireBackoffice, async (req, res) => 
   } else {
     assertAffected(await query('UPDATE invoices SET status = ?, paid_at = NULL WHERE id = ?', [status, invoiceId]), 'Fatura não encontrada');
   }
+  await audit(req, { action: `status:${status}`, entity: 'invoice', entityId: invoiceId });
   res.json({ message: 'Fatura atualizada' });
 });
 
