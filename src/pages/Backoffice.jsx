@@ -3,12 +3,15 @@ import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
 import { 
   Building2, Users, CreditCard, Plus,
-  CheckCircle2, XCircle, ExternalLink, RefreshCw, X, Trash2, DollarSign, FileText
+  CheckCircle2, XCircle, ExternalLink, RefreshCw, X, Trash2, DollarSign, FileText,
+  Layers, Receipt,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useConfirm } from '../components/ConfirmDialog';
 import { apiFetch } from '../api/client';
 import { formatCurrency, formatDate, parseLocalDate } from '../utils/format';
+import PlansTab from './backoffice/PlansTab';
+import FiscalTab from './backoffice/FiscalTab';
 
 const Backoffice = () => {
   const { user, token, switchTenant, refreshTenants } = useAuth();
@@ -123,7 +126,11 @@ const Backoffice = () => {
     { id: 'clients', label: 'Clientes', icon: Building2 },
     { id: 'billing', label: 'Faturas', icon: CreditCard },
   ];
-  if (user?.isMaster) tabs.push({ id: 'team', label: 'Equipe Backoffice', icon: Users });
+  if (user?.isMaster) {
+    tabs.push({ id: 'team', label: 'Equipe Backoffice', icon: Users });
+    tabs.push({ id: 'plans', label: 'Planos', icon: Layers });
+    tabs.push({ id: 'fiscal', label: 'Fiscal (NFS-e)', icon: Receipt });
+  }
 
   return (
     <div className="fade-in">
@@ -207,7 +214,7 @@ const Backoffice = () => {
       })()}
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', background: 'white', padding: '4px', borderRadius: '10px', border: '1px solid var(--border)', width: 'fit-content' }}>
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', background: 'white', padding: '4px', borderRadius: '10px', border: '1px solid var(--border)', maxWidth: '100%', width: 'fit-content', overflowX: 'auto' }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', background: activeTab === t.id ? 'var(--primary)' : 'transparent', color: activeTab === t.id ? 'white' : 'var(--text-muted)', border: 'none', cursor: 'pointer' }}>
             <t.icon size={16} /> {t.label}
@@ -336,6 +343,9 @@ const Backoffice = () => {
           </div>
         </div>
       )}
+
+      {activeTab === 'plans' && user?.isMaster && <PlansTab />}
+      {activeTab === 'fiscal' && user?.isMaster && <FiscalTab />}
 
       {/* --- MODAL UNIVERSAL --- */}
       {modalType && (

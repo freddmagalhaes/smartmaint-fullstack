@@ -1,6 +1,7 @@
 import { Suspense, useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth, ROLES } from '../contexts/AuthContext';
+import { useData } from '../contexts/DataContext';
 import {
   LayoutDashboard,
   Settings,
@@ -17,10 +18,12 @@ import {
   ClipboardList,
   ArrowLeft,
   Package,
-  CalendarCheck
+  CalendarCheck,
+  Factory
 } from 'lucide-react';
 import logo from '../assets/logo.png';
 import { PageLoader } from './ProtectedRoute';
+import ErrorBoundary from './ErrorBoundary';
 
 const { ROOT, BACKOFFICE, ADMIN, MANAGER, USER } = ROLES;
 
@@ -41,6 +44,7 @@ const Layout = ({ children }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const { user, logout, hasRole, isBackoffice, activeTenant, tenants, switchTenant } = useAuth();
+  const { units, activeUnit, setActiveUnit } = useData();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -138,6 +142,16 @@ const Layout = ({ children }) => {
               <div className="app-company-badge">{tenantName}</div>
             )}
 
+            {units.length > 1 && (
+              <div className="app-tenant-selector">
+                <Factory size={16} color="var(--primary)" />
+                <select value={activeUnit || ''} onChange={(e) => setActiveUnit(e.target.value ? Number(e.target.value) : null)} aria-label="Unidade">
+                  <option value="">Todas as unidades</option>
+                  {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+            )}
+
             <div className="app-user">
               <div className="app-user-text">
                 <p className="app-user-name">{user?.name}</p>
@@ -151,9 +165,12 @@ const Layout = ({ children }) => {
         </header>
 
         <div className="app-content">
-          <Suspense fallback={<PageLoader />}>
-            {children}
-          </Suspense>
+          {/* key: ao trocar de página, uma tela que quebrou volta a funcionar */}
+          <ErrorBoundary key={location.pathname}>
+            <Suspense fallback={<PageLoader />}>
+              {children}
+            </Suspense>
+          </ErrorBoundary>
         </div>
       </main>
     </div>

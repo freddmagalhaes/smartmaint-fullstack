@@ -5,10 +5,15 @@ import {
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import { formatDate } from '../utils/format';
+import { usePagedList } from '../hooks/usePagedList';
+import Pagination from '../components/Pagination';
 
 const Failures = () => {
-  const { equipments, failures, repairs, addFailure, updateFailure, deleteFailure } = useData();
+  const { equipments, addFailure, updateFailure, deleteFailure } = useData();
   const [activeTab, setActiveTab] = useState('failures');
+  const failures = usePagedList('/api/failures', {}, { pageSize: 20, enabled: activeTab === 'failures' });
+  const repairs = usePagedList('/api/repairs', {}, { pageSize: 20, enabled: activeTab === 'repairs' });
+  const current = activeTab === 'failures' ? failures : repairs;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   
@@ -18,13 +23,6 @@ const Failures = () => {
     tempo_operacao: ''
   });
 
-  const getEquipmentName = (id) => {
-    return equipments.find(eq => eq.id === id)?.name || 'Desconhecido';
-  };
-
-  const getEquipmentImage = (id) => {
-    return equipments.find(eq => eq.id === id)?.image;
-  };
 
   const handleOpenAdd = () => {
     setEditingId(null);
@@ -81,27 +79,30 @@ const Failures = () => {
           <Search size={18} color="var(--text-muted)" />
           <input type="text" placeholder="Filtrar por equipamento ou descrição..." style={styles.searchInput} />
         </div>
-        <button className="btn-primary" onClick={handleOpenAdd}>
-          <Plus size={18} />
-          Registrar {activeTab === 'failures' ? 'Falha' : 'Reparo'}
-        </button>
+        {/* Reparos são gerados ao concluir uma O.S. */}
+        {activeTab === 'failures' && (
+          <button className="btn-primary" onClick={handleOpenAdd} disabled={equipments.length === 0}>
+            <Plus size={18} />
+            Registrar Falha
+          </button>
+        )}
       </div>
 
       {/* Listagem */}
       <div style={styles.listContainer}>
         {activeTab === 'failures' ? (
-          failures.map((failure) => (
+          failures.items.map((failure) => (
             <div key={failure.id} className="premium-card" style={styles.eventCard}>
               <div style={{...styles.eventIcon, overflow: 'hidden'}}>
-                <img 
-                  src={getEquipmentImage(failure.equipment_id)} 
-                  alt="Equipamento"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
+                {failure.equipment_image ? (
+                  <img src={failure.equipment_image} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <AlertTriangle size={20} color="var(--danger)" />
+                )}
               </div>
               <div style={styles.eventInfo}>
                 <div style={styles.eventHeader}>
-                  <h3 style={styles.eventTitle}>{getEquipmentName(failure.equipment_id)}</h3>
+                  <h3 style={styles.eventTitle}>{failure.equipment_name}</h3>
                   <span style={styles.eventDate}>{formatDate(failure.data_falha)}</span>
                 </div>
                 <p style={styles.eventDesc}>{failure.descricao}</p>
@@ -111,36 +112,42 @@ const Failures = () => {
                 </div>
               </div>
               <div style={styles.eventAction}>
-                <button style={styles.actionBtn} onClick={() => handleOpenEdit(failure)}>
+                <button style={styles.actionBtn} title="Editar" aria-label="Editar falha" onClick={() => handleOpenEdit(failure)}>
                   <Edit2 size={18} />
                 </button>
-                <button style={styles.deleteBtn} onClick={() => deleteFailure(failure.id)}>
+                <button style={styles.deleteBtn} title="Excluir" aria-label="Excluir falha" onClick={() => deleteFailure(failure.id)}>
                   <Trash2 size={18} />
                 </button>
               </div>
             </div>
           ))
         ) : (
-          repairs.map((repair) => (
+          repairs.items.map((repair) => (
             <div key={repair.id} className="premium-card" style={styles.eventCard}>
               <div style={{...styles.eventIcon, background: 'rgba(22, 163, 74, 0.1)'}}>
                 <CheckCircle2 size={20} color="var(--success)" />
               </div>
               <div style={styles.eventInfo}>
                 <div style={styles.eventHeader}>
-                  <h3 style={styles.eventTitle}>{getEquipmentName(repair.equipment_id)}</h3>
+                  <h3 style={styles.eventTitle}>{repair.equipment_name}</h3>
                   <span style={styles.eventDate}>{formatDate(repair.data_reparo)}</span>
                 </div>
                 <p style={styles.eventDesc}>Manutenção {repair.tipo} concluída com sucesso.</p>
                 <div style={styles.eventMeta}>
                   <Clock size={14} />
-                  <span>Duração do Reparo: {repair.tempo_reparo}h</span>
+                  <span>Duração do Reparo: {Number(repair.tempo_reparo)}h</span>
                 </div>
               </div>
             </div>
           ))
         )}
+        {!current.loading && current.items.length === 0 && (
+          <p style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px' }}>
+            {activeTab === 'failures' ? 'Nenhuma falha registrada.' : 'Nenhum reparo ainda: eles são registrados ao concluir uma O.S.'}
+          </p>
+        )}
       </div>
+      <Pagination page={current.page} pageSize={current.pageSize} total={current.total} onChange={current.setPage} loading={current.loading} />
 
       {/* Modal de Registro */}
       {isModalOpen && (

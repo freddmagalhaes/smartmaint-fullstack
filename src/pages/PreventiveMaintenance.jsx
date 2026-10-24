@@ -6,11 +6,16 @@ import {
 import { useData } from '../contexts/DataContext';
 import { useConfirm } from '../components/ConfirmDialog';
 import { formatDate, todayISO } from '../utils/format';
+import { usePagedList, useDebounced } from '../hooks/usePagedList';
+import Pagination from '../components/Pagination';
 
 const PreventiveMaintenance = () => {
-  const { preventivePlans, equipments, addPreventivePlan, updatePreventivePlan, deletePreventivePlan } = useData();
+  const { equipments, addPreventivePlan, updatePreventivePlan, deletePreventivePlan } = useData();
   const confirm = useConfirm();
   const [searchTerm, setSearchTerm] = useState('');
+  const [dueFilter, setDueFilter] = useState('');
+  const search = useDebounced(searchTerm.trim());
+  const list = usePagedList('/api/preventive-plans', { q: search || undefined, due: dueFilter || undefined });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
@@ -21,11 +26,6 @@ const PreventiveMaintenance = () => {
     interval_days: 30,
     status: 'Ativo'
   });
-
-  const filteredPlans = preventivePlans.filter(plan => 
-    plan.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (plan.equipment_name && plan.equipment_name.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
 
   const handleOpenAdd = () => {
     setEditingId(null);
@@ -69,7 +69,7 @@ const PreventiveMaintenance = () => {
           <h1 style={styles.pageTitle}>Planos Preventivos</h1>
           <p style={styles.pageSubtitle}>Agende e controle manutenções recorrentes nos equipamentos.</p>
         </div>
-        <button className="btn-primary" onClick={handleOpenAdd}>
+        <button className="btn-primary" onClick={handleOpenAdd} disabled={equipments.length === 0}>
           <Plus size={20} />
           Novo Plano
         </button>
@@ -86,6 +86,11 @@ const PreventiveMaintenance = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+        <select aria-label="Filtrar por vencimento" style={styles.filterSelect} value={dueFilter} onChange={(e) => setDueFilter(e.target.value)}>
+          <option value="">Todos os planos</option>
+          <option value="atrasados">Atrasados</option>
+          <option value="7dias">Vencendo em 7 dias</option>
+        </select>
       </div>
 
       <div className="premium-card" style={{ overflow: 'hidden' }}>
@@ -103,7 +108,7 @@ const PreventiveMaintenance = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredPlans.length > 0 ? filteredPlans.map(plan => {
+              {list.items.length > 0 ? list.items.map(plan => {
                 const isLate = plan.next_due && plan.next_due < todayISO() && plan.status === 'Ativo';
                 return (
                   <tr key={plan.id} style={{ borderBottom: '1px solid var(--border)' }}>
@@ -167,6 +172,8 @@ const PreventiveMaintenance = () => {
         </div>
       </div>
 
+      <Pagination page={list.page} pageSize={list.pageSize} total={list.total} onChange={list.setPage} loading={list.loading} />
+
       {isModalOpen && (
         <div className="modal-overlay">
           <div className="premium-card fade-in modal-card" style={styles.modal}>
@@ -217,7 +224,8 @@ const styles = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' },
   pageTitle: { fontSize: '24px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' },
   pageSubtitle: { fontSize: '14px', color: 'var(--text-muted)' },
-  toolbar: { padding: '16px 24px', marginBottom: '24px' },
+  filterSelect: { padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'white', fontSize: '13px' },
+  toolbar: { padding: '12px 16px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' },
   searchWrapper: { display: 'flex', alignItems: 'center', gap: '12px', flex: 1, maxWidth: '400px' },
   searchInput: { width: '100%', border: 'none', fontSize: '14px', outline: 'none' },
   th: { padding: '16px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' },

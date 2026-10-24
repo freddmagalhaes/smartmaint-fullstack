@@ -1,4 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import { toast } from 'sonner';
+import { apiFetch, withQuery } from '../api/client';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie
 } from 'recharts';
@@ -11,66 +13,54 @@ import {
 import { useData } from '../contexts/DataContext';
 
 const Dashboard = () => {
-  const { equipments, failures, repairs, workOrders } = useData();
+  const { scope, dataVersion } = useData();
+  const [summary, setSummary] = useState(null);
 
-  // Cálculos Globais baseados no tenant
+  // Indicadores calculados no servidor (não depende de carregar todos os registros)
+  useEffect(() => {
+    if (!scope.tenant_id) return;
+    let cancelled = false;
+    apiFetch(withQuery('/api/dashboard/summary', scope))
+      .then((data) => { if (!cancelled) setSummary(data); })
+      .catch((err) => toast.error(err.message));
+    return () => { cancelled = true; };
+  }, [scope, dataVersion]);
+
   const metrics = useMemo(() => {
-    // DECIMAL chega da API como texto: converter antes de somar
-    const totalOpTime = equipments.reduce((acc, eq) => acc + Number(eq.total_op_time || 0), 0);
-    const totalFailures = failures.length;
-    const totalRepairTime = repairs.reduce((acc, rep) => acc + Number(rep.tempo_reparo || 0), 0);
-    const totalRepairs = repairs.length;
-
-    const mtbf = calculateMTBF(totalOpTime, totalFailures);
-    const mttr = calculateMTTR(totalRepairTime, totalRepairs);
-    const availability = calculateAvailability(mtbf, mttr);
-    const lambda = calculateLambda(totalFailures, totalOpTime);
-
-    // Métricas de O.S.
-    const activeOS = workOrders.filter(os => os.status !== 'Concluída').length;
-    const completedOS = workOrders.filter(os => os.status === 'Concluída').length;
-    const criticalOS = workOrders.filter(os => os.prioridade === 'Crítica' && os.status !== 'Concluída').length;
-
-    return { mtbf, mttr, availability, lambda, totalFailures, activeOS, completedOS, criticalOS };
-  }, [equipments, failures, repairs, workOrders]);
-
-  // Dados para Gráfico de Status de O.S.
-  const osStatusData = useMemo(() => {
-    const counts = {
-      'Aberta': workOrders.filter(os => os.status === 'Aberta').length,
-      'Em Execução': workOrders.filter(os => os.status === 'Em Execução').length,
-      'Concluída': workOrders.filter(os => os.status === 'Concluída').length,
+    const s = summary || { total_op_time: 0, failures: 0, repairs: 0, repair_hours: 0, work_orders: {}, critical_open: 0 };
+    const mtbf = calculateMTBF(s.total_op_time, s.failures);
+    const mttr = calculateMTTR(s.repair_hours, s.repairs);
+    const activeOS = Object.entries(s.work_orders).filter(([status]) => status !== 'Concluída').reduce((acc, [, n]) => acc + n, 0);
+    return {
+      mtbf,
+      mttr,
+      availability: calculateAvailability(mtbf, mttr),
+      lambda: calculateLambda(s.failures, s.total_op_time),
+      activeOS,
+      criticalOS: s.critical_open,
     };
-    return Object.keys(counts).map(name => ({ name, value: counts[name] }));
-  }, [workOrders]);
+  }, [summary]);
 
-  const COLORS = ['#3b82f6', '#f59e0b', '#10b981'];
+  const STATUS_ORDER = ['Aberta', 'Em Execução', 'Pausada', 'Concluída'];
+  const COLORS = ['#3b82f6', '#f59e0b', '#ef4444', '#10b981'];
+  const osStatusData = STATUS_ORDER.map((name) => ({ name, value: summary?.work_orders[name] || 0 }));
 
-  // Histórico real dos últimos 6 meses: falhas registradas e horas de reparo
+  // Histórico dos últimos 6 meses: falhas registradas e horas de reparo
   const chartData = useMemo(() => {
     const now = new Date();
-    const months = Array.from({ length: 6 }, (_, i) => {
+    return Array.from({ length: 6 }, (_, i) => {
       const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const name = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
-      return { key, name, falhas: 0, horasReparo: 0 };
+      return {
+        name: d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''),
+        falhas: summary?.monthly.failures[key] || 0,
+        horasReparo: summary?.monthly.repair_hours[key] || 0,
+      };
     });
-    const byKey = Object.fromEntries(months.map((m) => [m.key, m]));
-    failures.forEach((f) => { const m = byKey[String(f.data_falha || '').slice(0, 7)]; if (m) m.falhas += 1; });
-    repairs.forEach((r) => { const m = byKey[String(r.data_reparo || '').slice(0, 7)]; if (m) m.horasReparo += Number(r.tempo_reparo || 0); });
-    return months;
-  }, [failures, repairs]);
+  }, [summary]);
 
   // Equipamentos com mais O.S. em aberto
-  const criticalAssets = useMemo(() => {
-    const open = {};
-    workOrders.filter((os) => os.status !== 'Concluída').forEach((os) => { open[os.equipment_id] = (open[os.equipment_id] || 0) + 1; });
-    return equipments
-      .map((eq) => ({ name: eq.name, abertas: open[eq.id] || 0 }))
-      .filter((eq) => eq.abertas > 0)
-      .sort((a, b) => b.abertas - a.abertas)
-      .slice(0, 6);
-  }, [equipments, workOrders]);
+  const criticalAssets = (summary?.top_open_assets || []).map((a) => ({ name: a.name, abertas: a.open }));
 
   return (
     <div className="fade-in">

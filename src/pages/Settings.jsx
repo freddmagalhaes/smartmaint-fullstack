@@ -4,8 +4,10 @@ import { toast } from 'sonner';
 import {
   Building2, Users, UserCircle, Shield,
   CreditCard, Save, Plus, Trash2, Edit2,
-  X, FileText, CalendarDays, RefreshCw, CheckCircle2, KeyRound
+  X, FileText, CalendarDays, RefreshCw, CheckCircle2, KeyRound, Factory, History
 } from 'lucide-react';
+import UnitsTab from './settings/UnitsTab';
+import AuditTab from './settings/AuditTab';
 import { useAuth, ROLES } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { apiFetch, withQuery } from '../api/client';
@@ -19,6 +21,21 @@ const TEAM_ROLES = [
 
 const EMPTY_USER = { name: '', email: '', role: ROLES.USER, password: '' };
 
+// Dados cadastrais da empresa (também usados como tomador na nota fiscal de serviço)
+const COMPANY_FIELDS = ['name', 'razao_social', 'cnpj', 'email_financeiro', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf', 'municipio_ibge'];
+const ADDRESS_FIELDS = [
+  { key: 'razao_social', label: 'Razão social', span: 2 },
+  { key: 'email_financeiro', label: 'E-mail financeiro (recebe faturas e notas)', type: 'email', span: 2 },
+  { key: 'cep', label: 'CEP', maxLength: 9 },
+  { key: 'logradouro', label: 'Logradouro' },
+  { key: 'numero', label: 'Número', maxLength: 20 },
+  { key: 'complemento', label: 'Complemento', maxLength: 100 },
+  { key: 'bairro', label: 'Bairro', maxLength: 100 },
+  { key: 'cidade', label: 'Cidade', maxLength: 100 },
+  { key: 'uf', label: 'UF', maxLength: 2 },
+  { key: 'municipio_ibge', label: 'Código IBGE do município', maxLength: 7 },
+];
+
 const Settings = () => {
   const { user, activeTenant, tenants, hasRole, setToken, updateCurrentUser, refreshTenants } = useAuth();
   const { users, addUser, updateUser, deleteUser } = useData();
@@ -28,6 +45,8 @@ const Settings = () => {
   const tabs = [
     { id: 'company', label: 'Empresa', icon: Building2, visible: canAdmin },
     { id: 'users', label: 'Equipe', icon: Users, visible: canAdmin },
+    { id: 'units', label: 'Unidades', icon: Factory, visible: canAdmin },
+    { id: 'audit', label: 'Auditoria', icon: History, visible: canAdmin },
     { id: 'profile', label: 'Meu Perfil', icon: UserCircle, visible: true },
     { id: 'billing', label: 'Faturamento', icon: CreditCard, visible: canAdmin },
   ].filter((tab) => tab.visible);
@@ -46,13 +65,15 @@ const Settings = () => {
 
   const [userFormData, setUserFormData] = useState(EMPTY_USER);
   const [companyForm, setCompanyForm] = useState({ name: '', cnpj: '' });
+  const [usage, setUsage] = useState(null);
   const [profileName, setProfileName] = useState(user?.name || '');
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [saving, setSaving] = useState(null);
 
   useEffect(() => {
-    setCompanyForm({ name: currentTenant?.name || '', cnpj: currentTenant?.cnpj || '' });
-  }, [currentTenant?.name, currentTenant?.cnpj]);
+    if (!currentTenant) return;
+    setCompanyForm(Object.fromEntries(COMPANY_FIELDS.map((f) => [f, currentTenant[f] || ''])));
+  }, [currentTenant]);
 
   // Retorno do Checkout do Stripe
   useEffect(() => {
@@ -65,6 +86,9 @@ const Settings = () => {
     apiFetch(withQuery('/api/billing/invoices', { tenant_id: activeTenant }))
       .then(setInvoices)
       .catch((err) => toast.error(err.message));
+    apiFetch(withQuery('/api/billing/usage', { tenant_id: activeTenant }))
+      .then(setUsage)
+      .catch(() => setUsage(null));
   }, [activeTab, activeTenant]);
 
   const handleOpenAddUser = () => {
@@ -195,6 +219,15 @@ const Settings = () => {
                     <label style={styles.label} htmlFor="company-cnpj">CNPJ</label>
                     <input id="company-cnpj" type="text" maxLength={20} placeholder="00.000.000/0001-00" value={companyForm.cnpj} onChange={(e) => setCompanyForm({ ...companyForm, cnpj: e.target.value })} style={styles.input} />
                   </div>
+                </div>
+                <h4 style={{ ...styles.planTitle, margin: '32px 0 16px' }}>Dados para faturamento e nota fiscal</h4>
+                <div className="form-grid" style={styles.formGrid}>
+                  {ADDRESS_FIELDS.map((f) => (
+                    <div key={f.key} style={{ ...styles.inputGroup, ...(f.span === 2 && { gridColumn: 'span 2' }) }}>
+                      <label style={styles.label} htmlFor={`company-${f.key}`}>{f.label}</label>
+                      <input id={`company-${f.key}`} type={f.type || 'text'} maxLength={f.maxLength || 255} value={companyForm[f.key] || ''} onChange={(e) => setCompanyForm({ ...companyForm, [f.key]: e.target.value })} style={styles.input} />
+                    </div>
+                  ))}
                 </div>
                 <button type="submit" className="btn-primary" style={{ marginTop: '24px' }} disabled={saving === 'company'}>
                   <Save size={18} />
@@ -384,6 +417,10 @@ const Settings = () => {
             </div>
           )}
 
+          {activeTab === 'units' && <UnitsTab />}
+
+          {activeTab === 'audit' && <AuditTab />}
+
           {activeTab === 'billing' && (
             <div className="fade-in">
               <SectionHeader 
@@ -393,11 +430,29 @@ const Settings = () => {
               <div style={styles.billingCard}>
                 <div style={styles.billingHeader}>
                   <div>
-                    <h4 style={styles.planTitle}>Plano {currentTenant?.plan_type || 'Pro'}</h4>
+                    <h4 style={styles.planTitle}>Plano {usage?.plan?.name || currentTenant?.plan_type || 'Pro'}</h4>
                     <p style={styles.planDesc}>Acesso completo ao SmartMaint</p>
                   </div>
                   <div style={styles.planStatus}>{currentTenant?.status || 'Ativo'}</div>
                 </div>
+                {usage && (
+                  <div style={styles.usageGrid}>
+                    {[['users', 'Usuários'], ['equipments', 'Equipamentos'], ['units', 'Unidades']].map(([key, label]) => {
+                      const { used, limit } = usage.usage[key];
+                      const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+                      return (
+                        <div key={key}>
+                          <p style={styles.usageLabel}>{label}: <strong>{used}</strong>{limit !== null ? ` de ${limit}` : ' (ilimitado)'}</p>
+                          {limit !== null && (
+                            <div style={styles.usageBar} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
+                              <div style={{ ...styles.usageFill, width: `${pct}%`, background: pct >= 90 ? 'var(--danger)' : 'var(--primary)' }} />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 <button
                   className="btn-primary"
                   onClick={handleCheckout}
@@ -543,6 +598,10 @@ const styles = {
   planTitle: { fontSize: '16px', fontWeight: '700', color: 'var(--text-main)' },
   planDesc: { fontSize: '13px', color: 'var(--text-muted)' },
   planStatus: { background: 'var(--success)', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '700' },
+  usageGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: '16px', marginBottom: '24px' },
+  usageLabel: { fontSize: '13px', color: 'var(--text-muted)', marginBottom: '6px' },
+  usageBar: { height: '6px', borderRadius: '3px', background: 'var(--border)', overflow: 'hidden' },
+  usageFill: { height: '100%', borderRadius: '3px' },
   th: { padding: '10px 12px', fontWeight: 600 },
   td: { padding: '12px' },
   modal: { width: '100%', maxWidth: '500px', padding: '32px', background: 'white' },

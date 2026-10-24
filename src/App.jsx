@@ -8,6 +8,7 @@ import ProtectedRoute, { PageLoader, HomeRedirect } from './components/Protected
 import Layout from './components/Layout';
 import BackofficeLayout from './components/BackofficeLayout';
 import Login from './pages/Login';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Cada página vira um arquivo JS separado, carregado sob demanda (bundle inicial menor)
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -40,46 +41,48 @@ const APP_ROUTES = [
 
 function App() {
   return (
-    <AuthProvider>
-      <ConfirmProvider>
-        <DataProvider>
-          <Router>
-            <Toaster position="top-right" richColors />
-            <Suspense fallback={<PageLoader />}>
-              <Routes>
-                <Route path="/login" element={<Login />} />
-                <Route path="/reset-password" element={<ResetPassword />} />
+    <ErrorBoundary>
+      <AuthProvider>
+        <ConfirmProvider>
+          <DataProvider>
+            <Router>
+              <Toaster position="top-right" richColors />
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/reset-password" element={<ResetPassword />} />
 
-                {APP_ROUTES.map(({ path, element, roles }) => (
+                  {APP_ROUTES.map(({ path, element, roles }) => (
+                    <Route
+                      key={path}
+                      path={path}
+                      element={
+                        <ProtectedRoute allowedRoles={roles}>
+                          <Layout>{element}</Layout>
+                        </ProtectedRoute>
+                      }
+                    />
+                  ))}
+
+                  {/* Backoffice - APENAS Root e Suporte */}
                   <Route
-                    key={path}
-                    path={path}
+                    path="/backoffice"
                     element={
-                      <ProtectedRoute allowedRoles={roles}>
-                        <Layout>{element}</Layout>
+                      <ProtectedRoute allowedRoles={[ROOT, BACKOFFICE]} requireTenant={false}>
+                        <BackofficeLayout><Backoffice /></BackofficeLayout>
                       </ProtectedRoute>
                     }
                   />
-                ))}
 
-                {/* Backoffice - APENAS Root e Suporte */}
-                <Route
-                  path="/backoffice"
-                  element={
-                    <ProtectedRoute allowedRoles={[ROOT, BACKOFFICE]} requireTenant={false}>
-                      <BackofficeLayout><Backoffice /></BackofficeLayout>
-                    </ProtectedRoute>
-                  }
-                />
-
-                {/* Rotas desconhecidas: página inicial do perfil */}
-                <Route path="*" element={<HomeRedirect />} />
-              </Routes>
-            </Suspense>
-          </Router>
-        </DataProvider>
-      </ConfirmProvider>
-    </AuthProvider>
+                  {/* Rotas desconhecidas: página inicial do perfil */}
+                  <Route path="*" element={<HomeRedirect />} />
+                </Routes>
+              </Suspense>
+            </Router>
+          </DataProvider>
+        </ConfirmProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

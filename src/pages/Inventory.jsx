@@ -4,10 +4,16 @@ import {
   Edit2, Trash2, AlertCircle, Hash, DollarSign
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
+import { usePagedList, useDebounced } from '../hooks/usePagedList';
+import Pagination from '../components/Pagination';
 
 const Inventory = () => {
-  const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem } = useData();
+  const { units, activeUnit, addInventoryItem, updateInventoryItem, deleteInventoryItem } = useData();
   const [searchTerm, setSearchTerm] = useState('');
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const search = useDebounced(searchTerm.trim());
+  const list = usePagedList('/api/inventory', { q: search || undefined, low_stock: lowStockOnly ? 'true' : undefined });
+  const showUnits = units.length > 1;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
@@ -19,14 +25,9 @@ const Inventory = () => {
     unit_price: 0
   });
 
-  const filteredInventory = inventory.filter(item => 
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (item.sku && item.sku.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
-
   const handleOpenAdd = () => {
     setEditingId(null);
-    setFormData({ name: '', sku: '', quantity: 0, min_quantity: 5, unit_price: 0 });
+    setFormData({ name: '', sku: '', quantity: 0, min_quantity: 5, unit_price: 0, unit_id: activeUnit || '' });
     setIsModalOpen(true);
   };
 
@@ -41,6 +42,7 @@ const Inventory = () => {
     const data = {
       name: formData.name,
       sku: formData.sku,
+      unit_id: formData.unit_id ? Number(formData.unit_id) : null,
       quantity: Number(formData.quantity),
       min_quantity: Number(formData.min_quantity),
       unit_price: Number(formData.unit_price)
@@ -73,6 +75,10 @@ const Inventory = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+        <label style={styles.checkLabel}>
+          <input type="checkbox" checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} />
+          Somente abaixo do mínimo
+        </label>
       </div>
 
       <div className="premium-card" style={{ overflow: 'hidden' }}>
@@ -90,7 +96,7 @@ const Inventory = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredInventory.length > 0 ? filteredInventory.map(item => {
+              {list.items.length > 0 ? list.items.map(item => {
                 const isLow = item.quantity <= item.min_quantity;
                 return (
                   <tr key={item.id} style={{ borderBottom: '1px solid var(--border)' }}>
@@ -144,6 +150,7 @@ const Inventory = () => {
           </div>
         </div>
       </div>
+      <Pagination page={list.page} pageSize={list.pageSize} total={list.total} onChange={list.setPage} loading={list.loading} />
 
       {isModalOpen && (
         <div className="modal-overlay">
@@ -157,9 +164,18 @@ const Inventory = () => {
                   <label style={styles.label}>Nome da Peça</label>
                   <input required style={styles.input} value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
                 </div>
+                {showUnits && (
+                  <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
+                    <label style={styles.label}>Unidade</label>
+                    <select style={styles.input} value={formData.unit_id || ''} onChange={(e) => setFormData({...formData, unit_id: e.target.value})}>
+                      <option value="">Compartilhado entre unidades</option>
+                      {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>SKU / Código</label>
-                  <input style={styles.input} value={formData.sku} onChange={(e) => setFormData({...formData, sku: e.target.value})} />
+                  <input style={styles.input} value={formData.sku || ''} onChange={(e) => setFormData({...formData, sku: e.target.value})} />
                 </div>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Preço Unitário (R$)</label>
@@ -187,10 +203,11 @@ const Inventory = () => {
 };
 
 const styles = {
+  checkLabel: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-muted)', whiteSpace: 'nowrap' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' },
   pageTitle: { fontSize: '24px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' },
   pageSubtitle: { fontSize: '14px', color: 'var(--text-muted)' },
-  toolbar: { padding: '16px 24px', marginBottom: '24px' },
+  toolbar: { padding: '12px 16px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' },
   searchWrapper: { display: 'flex', alignItems: 'center', gap: '12px', flex: 1, maxWidth: '400px' },
   searchInput: { width: '100%', border: 'none', fontSize: '14px', outline: 'none' },
   th: { padding: '16px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' },

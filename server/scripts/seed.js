@@ -39,6 +39,7 @@ const seed = async () => {
   if (process.argv.includes('--demo')) {
     const password = requirePassword('DEMO_PASSWORD');
     await db.query("INSERT IGNORE INTO tenants (id, name, plan_type, contact_email) VALUES ('demo', 'Empresa Demonstração', 'Pro', 'admin@demo.smartmaint.local')");
+    await db.query("INSERT IGNORE INTO units (tenant_id, name) VALUES ('demo', 'Unidade Principal')");
     await db.query(
       "INSERT IGNORE INTO users (tenant_id, name, email, password, role) VALUES ('demo', 'Admin Demo', 'admin@demo.smartmaint.local', ?, 'Administrador')",
       [await hashPassword(password)]

@@ -8,7 +8,7 @@ import {
 import { useData } from '../contexts/DataContext';
 
 const Simulator = () => {
-  const { equipments, failures } = useData();
+  const { equipments } = useData();
   
   const [chosenEquipId, setSelectedEquipId] = useState(null);
   // Enquanto nada foi escolhido, usa o primeiro equipamento (os dados podem chegar depois da página abrir)
@@ -21,12 +21,12 @@ const Simulator = () => {
     
     if (!equipment) return null;
 
-    const equipFailures = failures.filter(f => f.equipment_id === selectedEquipId).length;
-    const lambda = calculateLambda(equipFailures, equipment.total_op_time || 0);
+    const equipFailures = Number(equipment.failures_count || 0);
+    const lambda = calculateLambda(equipFailures, Number(equipment.total_op_time || 0));
     const reliability = calculateReliability(lambda, targetTime);
 
     return { equipment, failures: equipFailures, lambda, reliability };
-  }, [selectedEquipId, targetTime, equipments, failures]);
+  }, [selectedEquipId, targetTime, equipments]);
 
   if (equipments.length === 0) {
     return (

@@ -12,7 +12,9 @@ SmartMaint é uma plataforma SaaS para gestão de ativos e manutenção industri
 - **⚠️ Falhas e Reparos:** histórico usado nos indicadores.
 - **🔍 FMEA:** RPN (Severidade × Ocorrência × Detecção).
 - **📈 Simulador R(t):** confiabilidade por equipamento.
-- **🏢 Backoffice:** clientes, contratos, faturas, equipe de suporte e acesso assistido aos dados do cliente.
+- **🏭 Unidades fabris:** várias plantas ou filiais por cliente, com filtro por unidade em todas as telas.
+- **🏢 Backoffice:** clientes, contratos, faturas, planos e limites, dados fiscais, equipe de suporte e acesso assistido aos dados do cliente.
+- **🧾 Auditoria:** histórico de acessos e alterações por cliente.
 - **💳 Cobrança:** pagamento via Stripe (cartão e boleto), baixa automática por webhook e bloqueio de inadimplentes.
 
 ## 👥 Perfis de acesso
@@ -36,6 +38,25 @@ As permissões são aplicadas no backend (a interface apenas esconde o que o per
 - `helmet` com Content Security Policy, rate limit geral e específico para login e recuperação de senha.
 - Uploads verificados pelo conteúdo do arquivo (PNG, JPG, WEBP, PDF), nomes aleatórios e separados por cliente.
 - Webhook do Stripe autenticado por assinatura.
+- Log de auditoria (logins, falhas de login, criação, alteração e exclusão), sem gravar senhas.
+
+## 📐 Planos e limites
+
+Os planos (`Starter`, `Pro`, `Enterprise`) ficam na tabela `plans` e são editados pelo Root em **Backoffice → Planos**: preço mensal, dias de teste e limites de usuários, equipamentos e unidades (em branco = ilimitado). Ao atingir o limite, a criação é bloqueada com a mensagem do plano (`403 PLAN_LIMIT`), e o administrador do cliente vê o uso em **Configurações → Faturamento**. Os valores iniciais são provisórios.
+
+## 🧾 NFS-e (Emissor Nacional)
+
+A emissão segue o padrão nacional (Sefin Nacional). O ambiente já está preparado:
+
+1. **Backoffice → Fiscal (NFS-e)**: dados do prestador (CNPJ, inscrição municipal, código IBGE do município, regime, código de tributação, alíquota de ISS e descrição do serviço) e um checklist do que falta.
+2. **Variáveis de ambiente**: certificado A1 em `NFSE_CERT_BASE64` (ou `NFSE_CERT_PATH`) e `NFSE_CERT_PASSWORD`, além de `NFSE_AMBIENTE` (`homologacao` ou `producao`). O certificado nunca é enviado pela interface.
+3. **Dados do tomador**: cada cliente preenche razão social, CNPJ e endereço em **Configurações → Empresa**.
+4. **Fila**: toda fatura paga gera uma NFS-e `Pendente`. A transmissão ao Emissor Nacional é ativada (`NFSE_ENABLED=true`) quando houver CNPJ, certificado e confirmação de que o município aderiu ao padrão nacional.
+
+## 📈 Logs e monitoramento
+
+- Logs da API em JSON (uma linha por evento, pronto para CloudWatch Logs Insights), com `X-Request-Id` em toda resposta para rastrear uma requisição de ponta a ponta. Senhas e tokens são mascarados.
+- Sentry opcional: `SENTRY_DSN` no backend e `VITE_SENTRY_DSN` no build do frontend (`docker build --build-arg VITE_SENTRY_DSN=...`).
 
 ## 🛠️ Tecnologias
 
