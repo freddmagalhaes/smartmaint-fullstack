@@ -9,7 +9,8 @@ import {
 import UnitsTab from './settings/UnitsTab';
 import AuditTab from './settings/AuditTab';
 import BillingTab from './settings/BillingTab';
-import { useAuth, ROLES } from '../contexts/AuthContext';
+import DataExport from './settings/DataExport';
+import { useAuth, ROLES, isBackofficeUser } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { apiFetch, withQuery } from '../api/client';
 import { formatDate, formatCurrency, parseLocalDate } from '../utils/format';
@@ -42,19 +43,21 @@ const Settings = () => {
   const { users, addUser, updateUser, deleteUser } = useData();
   const [searchParams] = useSearchParams();
   const canAdmin = hasRole([ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN]);
+  // Conta ainda sem assinatura: só empresa, perfil e faturamento
+  const isPending = !isBackofficeUser(user) && user?.tenant_status === 'Pendente';
 
   const tabs = [
     { id: 'company', label: 'Empresa', icon: Building2, visible: canAdmin },
-    { id: 'users', label: 'Equipe', icon: Users, visible: canAdmin },
-    { id: 'units', label: 'Unidades', icon: Factory, visible: canAdmin },
-    { id: 'audit', label: 'Auditoria', icon: History, visible: canAdmin },
+    { id: 'users', label: 'Equipe', icon: Users, visible: canAdmin && !isPending },
+    { id: 'units', label: 'Unidades', icon: Factory, visible: canAdmin && !isPending },
+    { id: 'audit', label: 'Auditoria', icon: History, visible: canAdmin && !isPending },
     { id: 'profile', label: 'Meu Perfil', icon: UserCircle, visible: true },
     { id: 'billing', label: 'Faturamento', icon: CreditCard, visible: canAdmin },
   ].filter((tab) => tab.visible);
 
   const requestedTab = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(
-    tabs.some((t) => t.id === requestedTab) ? requestedTab : (canAdmin ? 'company' : 'profile')
+    tabs.some((t) => t.id === requestedTab) ? requestedTab : (isPending ? 'billing' : canAdmin ? 'company' : 'profile')
   );
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
@@ -285,13 +288,14 @@ const Settings = () => {
                     })()}
 
                     <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '20px' }}>
-                      Para alterações contratuais (cancelamento, upgrade de plano ou mudança no tipo de renovação), entre em contato com o suporte SmartMaint.
+                      Plano, forma de pagamento e cancelamento ficam em Configurações → Faturamento. Para condições contratuais especiais, fale com o suporte SmartMaint.
                     </p>
                   </>
                 ) : (
                   <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Dados do contrato não disponíveis.</p>
                 )}
               </div>
+              <DataExport />
             </div>
           )}
 

@@ -54,6 +54,28 @@ export const apiFetch = async (path, { method = 'GET', body, auth = true } = {})
   return data;
 };
 
+/** Baixa um arquivo da API (ex.: exportação em .xlsx) e abre o "Salvar como" do navegador. */
+export const apiDownload = async (path, fallbackName = 'arquivo') => {
+  const token = getToken();
+  let res;
+  try {
+    res = await fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  } catch {
+    throw new ApiError(0, 'Falha de comunicação com o servidor. Verifique sua conexão.');
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new ApiError(res.status, data?.error || `Erro ${res.status}`, data?.code, data);
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '')?.[1] || fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const link = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
 /** Acrescenta parâmetros de query ignorando valores vazios. */
 export const withQuery = (path, params) => {
   const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString();

@@ -49,10 +49,10 @@ export const AuthProvider = ({ children }) => {
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(() => Boolean(readSavedUser()));
 
-  const persistUser = (data) => {
+  const persistUser = useCallback((data) => {
     setUser(data);
     storage.set(USER_KEY, JSON.stringify(data));
-  };
+  }, []);
 
   const setToken = useCallback((value) => {
     setTokenState(value);
@@ -100,26 +100,43 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, [logout]);
 
-  /** Retorna { ok: true } ou { ok: false, error } para a tela exibir a mensagem do servidor. */
+  /** Inicia a sessão com a resposta do login (ou da confirmação de e-mail do cadastro). */
+  const startSession = useCallback(async (data) => {
+    const formattedUser = formatUser(data);
+    delete formattedUser.token;
+    setToken(data.token);
+    persistUser(formattedUser);
+
+    const tenant = isBackofficeUser(formattedUser) ? null : formattedUser.tenant_id;
+    setActiveTenant(tenant);
+    if (tenant) storage.set(TENANT_KEY, tenant); else storage.remove(TENANT_KEY);
+
+    await fetchTenants();
+    return formattedUser;
+  }, [setToken, persistUser, fetchTenants]);
+
+  /** Retorna { ok: true } ou { ok: false, error, code } para a tela exibir a mensagem do servidor. */
   const login = async (email, password) => {
     try {
       const data = await apiFetch('/api/login', { method: 'POST', body: { email, password }, auth: false });
-      const formattedUser = formatUser(data);
-      delete formattedUser.token;
-      setToken(data.token);
-      persistUser(formattedUser);
-
-      const tenant = isBackofficeUser(formattedUser) ? null : formattedUser.tenant_id;
-      setActiveTenant(tenant);
-      if (tenant) storage.set(TENANT_KEY, tenant); else storage.remove(TENANT_KEY);
-
-      await fetchTenants();
+      const formattedUser = await startSession(data);
       toast.success(`Bem-vindo, ${formattedUser.name}!`);
       return { ok: true, user: formattedUser };
     } catch (error) {
-      return { ok: false, error: error.message };
+      return { ok: false, error: error.message, code: error.code };
     }
   };
+
+  /** Recarrega o perfil (status da assinatura, aceite dos termos) depois de mudanças no servidor. */
+  const refreshMe = useCallback(async () => {
+    try {
+      const me = await apiFetch('/api/me');
+      persistUser(formatUser(me));
+      return me;
+    } catch {
+      return null;
+    }
+  }, [persistUser]);
 
   // Backoffice (Root e Suporte) pode acessar os dados de qualquer cliente
   const switchTenant = (tenantId) => {
@@ -143,6 +160,8 @@ export const AuthProvider = ({ children }) => {
       activeTenant,
       tenants,
       login,
+      startSession,
+      refreshMe,
       logout,
       hasRole,
       isBackoffice: isBackofficeUser(user),

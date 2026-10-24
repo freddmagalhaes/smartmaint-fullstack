@@ -3,7 +3,7 @@ const bcrypt = require('bcrypt');
 const { query, buildUpdate } = require('../utils/routeHelpers');
 const { HttpError } = require('../utils/errorHandler');
 const { hashPassword } = require('../utils/passwords');
-const { signToken } = require('../middleware/auth');
+const { signToken, legalPending } = require('../middleware/auth');
 const { publicUser } = require('./authRoutes');
 const { parse, z, text, password } = require('../utils/validate');
 const { audit } = require('../utils/audit');
@@ -15,6 +15,7 @@ router.get('/me', (req, res) => {
   res.json({
     ...publicUser(req.user),
     tenant_status: req.user.tenant_status || null,
+    legal_pending: legalPending(req.user),
     notifications_enabled: Boolean(req.user.notifications_enabled),
   });
 });

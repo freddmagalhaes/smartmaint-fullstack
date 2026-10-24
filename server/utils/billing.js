@@ -16,7 +16,7 @@ const markInvoicePaid = async (invoiceId, sessionId) => db.transaction(async (q)
   await enqueueForInvoice(q, invoice);
   const [{ overdue }] = await q("SELECT COUNT(*) AS overdue FROM invoices WHERE tenant_id = ? AND status = 'Atrasada'", [invoice.tenant_id]);
   if (overdue === 0) {
-    await q("UPDATE tenants SET status = 'Ativo' WHERE id = ? AND status IN ('Inadimplente', 'Trial')", [invoice.tenant_id]);
+    await q("UPDATE tenants SET status = 'Ativo' WHERE id = ? AND status IN ('Inadimplente', 'Trial', 'Pendente')", [invoice.tenant_id]);
   }
   return true;
 });
@@ -31,6 +31,7 @@ const REMINDER_DAYS = 5;
 const runBillingCycle = async () => {
   // Boleto e Pix: fatura do mês gerada antes do vencimento (require aqui evita dependência circular)
   const invoicesCreated = await require('./subscriptions').generateManualInvoices();
+  const signupsRemoved = await require('./signup').purgeAbandonedSignups();
   // Lembrete antes do vencimento e aviso de atraso (uma vez por fatura, ver notifications_sent)
   const [dueSoon] = await db.query(
     "SELECT * FROM invoices WHERE status = 'Pendente' AND vencimento BETWEEN CURRENT_DATE AND DATE_ADD(CURRENT_DATE, INTERVAL ? DAY)",
@@ -49,7 +50,7 @@ const runBillingCycle = async () => {
      )`,
     [config.billing.graceDays]
   );
-  return { invoicesCreated, invoicesLate: late.affectedRows, tenantsBlocked: blocked.affectedRows };
+  return { invoicesCreated, signupsRemoved, invoicesLate: late.affectedRows, tenantsBlocked: blocked.affectedRows };
 };
 
 const startBillingScheduler = () => {

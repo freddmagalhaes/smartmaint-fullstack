@@ -22,6 +22,10 @@ const Inventory = lazy(() => import('./pages/Inventory'));
 const Settings = lazy(() => import('./pages/Settings'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const Backoffice = lazy(() => import('./pages/Backoffice'));
+const Signup = lazy(() => import('./pages/Signup'));
+const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
+const Terms = lazy(() => import('./pages/legal/Terms'));
+const Privacy = lazy(() => import('./pages/legal/Privacy'));
 
 const { ROOT, BACKOFFICE, ADMIN, MANAGER, USER } = ROLES;
 
@@ -51,6 +55,10 @@ function App() {
                 <Routes>
                   <Route path="/login" element={<Login />} />
                   <Route path="/reset-password" element={<ResetPassword />} />
+                  <Route path="/cadastro" element={<Signup />} />
+                  <Route path="/verificar-email" element={<VerifyEmail />} />
+                  <Route path="/termos" element={<Terms />} />
+                  <Route path="/privacidade" element={<Privacy />} />
 
                   {APP_ROUTES.map(({ path, element, roles }) => (
                     <Route

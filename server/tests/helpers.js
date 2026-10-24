@@ -9,6 +9,7 @@ process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test_fake';
 process.env.UPLOAD_DIR = path.join(os.tmpdir(), `smartmaint-test-uploads-${process.pid}`);
 process.env.RATE_LIMIT_LOGIN_MAX = '1000';
+process.env.RATE_LIMIT_SIGNUP_MAX = '1000';
 delete process.env.SMTP_HOST;
 delete process.env.S3_BUCKET;
 
@@ -47,6 +48,8 @@ const setupDatabase = async () => {
   for (const [tenant, name, email, role, master] of users) {
     await db.query('INSERT INTO users (tenant_id, name, email, password, role, is_master) VALUES (?, ?, ?, ?, ?, ?)', [tenant, name, email, hash, role, master]);
   }
+  // Usuários de teste já aceitaram os Termos e a Política de Privacidade vigentes
+  await db.query('UPDATE users SET legal_version_accepted = ?', [require('../utils/legal').LEGAL_VERSION]);
   await db.query("INSERT INTO units (tenant_id, name) VALUES ('acme', 'Planta Contagem'), ('globex', 'Unidade Principal')");
   await db.query(`INSERT INTO equipments (tenant_id, unit_id, name)
     SELECT 'acme', id, 'Compressor ACME' FROM units WHERE tenant_id = 'acme'

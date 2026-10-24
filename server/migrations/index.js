@@ -7,6 +7,7 @@ const migrations = [
   require('./004_multicliente'),
   require('./005_produto'),
   require('./006_assinaturas'),
+  require('./007_lgpd_cadastro'),
 ];
 
 const helpers = (q) => ({
