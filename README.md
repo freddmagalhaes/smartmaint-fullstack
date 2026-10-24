@@ -36,7 +36,48 @@ Durante a auditoria de código, o SmartMaint foi configurado com as seguintes di
 - **MySQL** (Banco de Dados)
 - **Dotenv** (Configuração de Ambiente)
 
-## 📦 Como Instalar e Rodar
+## 🐳 Rodando com Docker (recomendado)
+
+Sobe o projeto completo (MySQL + API + Frontend) com um único comando. Funciona no Linux, no macOS e no **Windows com Docker Desktop + WSL 2**.
+
+### Pré-requisitos
+- Docker com o plugin Compose (`docker compose version`)
+- **Windows/WSL:** no Docker Desktop, ative *Settings → Resources → WSL Integration* para a sua distro e rode os comandos no terminal do WSL. Mantenha o projeto no sistema de arquivos do Linux (`~/...`), não em `/mnt/c/...`.
+
+### Passo a passo
+```bash
+# 1. Crie o arquivo de variáveis e defina um JWT_SECRET forte
+cp .env.example .env
+#    gere uma chave com: openssl rand -hex 32
+
+# 2. Construa as imagens e suba os containers
+docker compose up -d --build
+
+# 3. Acesse no navegador
+#    http://localhost:8080
+```
+
+Na primeira inicialização o MySQL importa `server/database.sql` automaticamente, com a estrutura e os usuários iniciais.
+
+### Serviços
+| Serviço | Container        | Porta no host                  | Descrição                                   |
+|---------|------------------|--------------------------------|---------------------------------------------|
+| `web`   | `smartmaint-web` | `8080` (`WEB_PORT`)            | Nginx com o build do React. Encaminha `/api` e `/uploads` para a API |
+| `api`   | `smartmaint-api` | não exposta                    | Backend Node/Express (porta interna 3001)   |
+| `db`    | `smartmaint-db`  | `3307` (`DB_EXTERNAL_PORT`)    | MySQL 8, acessível por clientes como DBeaver/Workbench |
+
+### Comandos úteis
+```bash
+docker compose ps                 # status dos containers
+docker compose logs -f api        # logs do backend
+docker compose up -d --build api  # rebuild só da API após alterar o código
+docker compose down               # para tudo (mantém os dados)
+docker compose down -v            # para tudo e APAGA banco e uploads
+```
+
+> Para reimportar o `database.sql` (por exemplo, depois de alterar o schema), rode `docker compose down -v` e suba de novo. Isso apaga os dados do banco.
+
+## 📦 Como Instalar e Rodar (sem Docker)
 
 ### Pré-requisitos
 - Node.js instalado

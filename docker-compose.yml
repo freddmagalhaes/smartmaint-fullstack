@@ -1,0 +1,72 @@
+# SmartMaint - ambiente completo (MySQL + API Node + Frontend Nginx)
+# Uso: cp .env.example .env && docker compose up -d --build
+# Acesse: http://localhost:8080
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: smartmaint-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-smartmaint}
+      MYSQL_DATABASE: ${DB_NAME:-smartmaint_db}
+      TZ: America/Sao_Paulo
+    ports:
+      - "${DB_EXTERNAL_PORT:-3307}:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      # Executado apenas na primeira inicialização (volume vazio)
+      - ./server/database.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: smartmaint-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3001
+      TRUST_PROXY: 1
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD:-smartmaint}
+      DB_NAME: ${DB_NAME:-smartmaint_db}
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET no arquivo .env}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_mock}
+    # A API não é exposta no host: o acesso passa pelo Nginx (web) em /api
+    expose:
+      - "3001"
+    volumes:
+      - uploads:/app/uploads
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartmaint-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  db_data:
+  uploads:

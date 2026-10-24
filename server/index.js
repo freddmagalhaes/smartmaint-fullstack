@@ -10,6 +10,12 @@ const routes = require('./routes/index');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Atrás de um proxy reverso (ex.: Nginx no docker-compose), usa o IP real do cliente no rate limit
+if (process.env.TRUST_PROXY) {
+  const hops = Number(process.env.TRUST_PROXY);
+  app.set('trust proxy', Number.isNaN(hops) ? process.env.TRUST_PROXY : hops);
+}
+
 app.use(helmet({ crossOriginResourcePolicy: false })); // Permite carregar imagens no frontend
 app.use(cors());
 app.use(express.json());
