@@ -1,22 +1,23 @@
 const express = require('express');
+const { authMiddleware } = require('../middleware/auth');
+const { notFound } = require('../utils/errorHandler');
+
 const router = express.Router();
 
-const authRoutes = require('./authRoutes');
-const tenantRoutes = require('./tenantRoutes');
-const equipmentRoutes = require('./equipmentRoutes');
-const workOrderRoutes = require('./workOrderRoutes');
-const inventoryRoutes = require('./inventoryRoutes');
-const preventiveRoutes = require('./preventiveRoutes');
-const uploadRoutes = require('./uploadRoutes');
-const billingRoutes = require('./billingRoutes');
+// Rotas públicas
+router.use(require('./authRoutes').router);
 
-router.use(authRoutes);
-router.use(tenantRoutes);
-router.use(equipmentRoutes);
-router.use(workOrderRoutes);
-router.use(inventoryRoutes);
-router.use(preventiveRoutes);
-router.use(uploadRoutes);
-router.use(billingRoutes);
+// Daqui em diante todas as rotas exigem autenticação
+router.use(authMiddleware);
+router.use(require('./accountRoutes'));
+router.use(require('./tenantRoutes'));
+router.use(require('./equipmentRoutes'));
+router.use(require('./workOrderRoutes'));
+router.use(require('./inventoryRoutes'));
+router.use(require('./preventiveRoutes'));
+router.use(require('./uploadRoutes').apiRouter);
+router.use(require('./billingRoutes').router);
+
+router.use(notFound);
 
 module.exports = router;

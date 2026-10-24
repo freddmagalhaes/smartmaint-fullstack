@@ -1,9 +1,7 @@
--- Criação do Banco de Dados
-CREATE DATABASE IF NOT EXISTS smartmaint_db;
-USE smartmaint_db;
-
+// Schema original do SmartMaint (idempotente: não altera bancos já criados a partir do antigo database.sql).
+const statements = `
 -- Tabela de Tenants (Empresas/Unidades)
-CREATE TABLE tenants (
+CREATE TABLE IF NOT EXISTS tenants (
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     status ENUM('Ativo', 'Inadimplente', 'Cancelado', 'Trial') DEFAULT 'Ativo',
@@ -19,7 +17,7 @@ CREATE TABLE tenants (
 );
 
 -- Tabela de Faturas (Invoices)
-CREATE TABLE invoices (
+CREATE TABLE IF NOT EXISTS invoices (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tenant_id VARCHAR(50) NOT NULL,
     valor DECIMAL(10, 2) NOT NULL,
@@ -31,7 +29,7 @@ CREATE TABLE invoices (
 );
 
 -- Tabela de Usuários
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tenant_id VARCHAR(50),
     name VARCHAR(255) NOT NULL,
@@ -46,7 +44,7 @@ CREATE TABLE users (
 );
 
 -- Tabela de Equipamentos
-CREATE TABLE equipments (
+CREATE TABLE IF NOT EXISTS equipments (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tenant_id VARCHAR(50) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -61,7 +59,7 @@ CREATE TABLE equipments (
 );
 
 -- Tabela de Falhas
-CREATE TABLE failures (
+CREATE TABLE IF NOT EXISTS failures (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tenant_id VARCHAR(50) NOT NULL,
     equipment_id INT NOT NULL,
@@ -74,7 +72,7 @@ CREATE TABLE failures (
 );
 
 -- Tabela de Reparos (Manutenções Concluídas)
-CREATE TABLE repairs (
+CREATE TABLE IF NOT EXISTS repairs (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tenant_id VARCHAR(50) NOT NULL,
     equipment_id INT NOT NULL,
@@ -87,7 +85,7 @@ CREATE TABLE repairs (
 );
 
 -- Tabela FMEA (Análise de Risco)
-CREATE TABLE fmea (
+CREATE TABLE IF NOT EXISTS fmea (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tenant_id VARCHAR(50) NOT NULL,
     equipment_id INT NOT NULL,
@@ -102,7 +100,7 @@ CREATE TABLE fmea (
 );
 
 -- Tabela de Ordens de Serviço (O.S.)
-CREATE TABLE work_orders (
+CREATE TABLE IF NOT EXISTS work_orders (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tenant_id VARCHAR(50) NOT NULL,
     equipment_id INT NOT NULL,
@@ -118,7 +116,7 @@ CREATE TABLE work_orders (
 );
 
 -- Tabela de Estoque / Peças
-CREATE TABLE inventory (
+CREATE TABLE IF NOT EXISTS inventory (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tenant_id VARCHAR(50) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -131,7 +129,7 @@ CREATE TABLE inventory (
 );
 
 -- Tabela de Planos Preventivos
-CREATE TABLE preventive_plans (
+CREATE TABLE IF NOT EXISTS preventive_plans (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tenant_id VARCHAR(50) NOT NULL,
     equipment_id INT NOT NULL,
@@ -146,10 +144,11 @@ CREATE TABLE preventive_plans (
     FOREIGN KEY (equipment_id) REFERENCES equipments(id) ON DELETE CASCADE
 );
 
--- Inserção de Dados Iniciais (Seed)
-INSERT INTO tenants (id, name) VALUES ('delp', 'DELP Engenharia'), ('stellantis', 'Stellantis');
+`.split(';').map((s) => s.trim()).filter((s) => s && !/^(--[^\n]*\n?)+$/.test(s));
 
-INSERT INTO users (tenant_id, name, email, password, role, is_master) VALUES 
-(NULL, 'Master', 'master@smartmaint.com', '$2b$10$a70zVnmJjbDO1YgAYyToGuNwrkOpvZSs0wPaiR3r.UzgpHXv1UwCu', 'Dono', TRUE),
-('delp', 'Carlos (Dono)', 'dono@delp.com.br', '$2b$10$a70zVnmJjbDO1YgAYyToGuNwrkOpvZSs0wPaiR3r.UzgpHXv1UwCu', 'Administrador', FALSE),
-('stellantis', 'Julia (Dona)', 'dono@stellantis.com', '$2b$10$a70zVnmJjbDO1YgAYyToGuNwrkOpvZSs0wPaiR3r.UzgpHXv1UwCu', 'Administrador', FALSE);
+module.exports = {
+  id: '001_initial',
+  up: async (q) => {
+    for (const sql of statements) await q(sql);
+  },
+};
