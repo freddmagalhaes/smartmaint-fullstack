@@ -29,7 +29,7 @@ const authMiddleware = async (req, res, next) => {
   }
 
   const [rows] = await db.query(
-    `SELECT u.id, u.tenant_id, u.name, u.email, u.role, u.is_master, u.token_version, t.status AS tenant_status
+    `SELECT u.id, u.tenant_id, u.name, u.email, u.role, u.is_master, u.token_version, u.notifications_enabled, t.status AS tenant_status
      FROM users u LEFT JOIN tenants t ON t.id = u.tenant_id WHERE u.id = ?`,
     [payload.id]
   );

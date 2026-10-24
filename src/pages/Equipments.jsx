@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { 
   Plus, Search, 
-  Calendar, Hash, Tag, Activity, X, Trash2, Edit2, Cpu
+  Calendar, Hash, Tag, Activity, X, Trash2, Edit2, Cpu, FileSpreadsheet
 } from 'lucide-react';
+import ImportEquipmentsModal from '../components/ImportEquipmentsModal';
 import { toast } from 'sonner';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, withQuery } from '../api/client';
-import { formatDate, todayISO } from '../utils/format';
+import { formatDate, todayISO, formatCurrency } from '../utils/format';
 import { usePagedList, useDebounced } from '../hooks/usePagedList';
 import Pagination from '../components/Pagination';
 
@@ -18,6 +19,7 @@ const Equipments = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   
   // Estado do formulário
   const [formData, setFormData] = useState({
@@ -88,11 +90,18 @@ const Equipments = () => {
           <h1 style={styles.pageTitle}>Gestão de Ativos</h1>
           <p style={styles.pageSubtitle}>Visualize e gerencie todos os equipamentos da planta.</p>
         </div>
-        <button className="btn-primary" onClick={handleOpenAdd}>
-          <Plus size={20} />
-          Novo Equipamento
-        </button>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <button type="button" style={styles.secondaryBtn} onClick={() => setIsImportOpen(true)}>
+            <FileSpreadsheet size={18} />
+            Importar planilha
+          </button>
+          <button className="btn-primary" onClick={handleOpenAdd}>
+            <Plus size={20} />
+            Novo Equipamento
+          </button>
+        </div>
       </header>
+      {isImportOpen && <ImportEquipmentsModal onClose={() => setIsImportOpen(false)} />}
 
       {/* Filtros e Busca */}
       <div className="premium-card" style={styles.toolbar}>
@@ -118,6 +127,7 @@ const Equipments = () => {
               <th style={styles.th}>Modelo / Série</th>
               <th style={styles.th}>Data Início</th>
               <th style={styles.th}>Horas Operação</th>
+              <th style={styles.th}>Custo em peças</th>
               <th style={styles.th}>Status</th>
               <th style={styles.th}></th>
             </tr>
@@ -167,6 +177,7 @@ const Equipments = () => {
                     <span>{Number(eq.total_op_time || 0).toLocaleString('pt-BR')}h</span>
                   </div>
                 </td>
+                <td style={styles.td}>{formatCurrency(eq.parts_cost)}</td>
                 <td style={styles.td}>
                   {(() => {
                     // Equipamento com O.S. em execução está em manutenção
@@ -311,6 +322,7 @@ const Equipments = () => {
 };
 
 const styles = {
+  secondaryBtn: { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'white', fontWeight: 500, color: 'var(--text-main)' },
   header: {
     display: 'flex',
     justifyContent: 'space-between',

@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { 
   Package, Plus, Search, 
-  Edit2, Trash2, AlertCircle, Hash, DollarSign
+  Edit2, Trash2, AlertCircle, Hash, DollarSign, ArrowLeftRight
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import { usePagedList, useDebounced } from '../hooks/usePagedList';
 import Pagination from '../components/Pagination';
+import StockMovementsModal from '../components/StockMovementsModal';
 
 const Inventory = () => {
   const { units, activeUnit, addInventoryItem, updateInventoryItem, deleteInventoryItem } = useData();
   const [searchTerm, setSearchTerm] = useState('');
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [movementsItem, setMovementsItem] = useState(null);
   const search = useDebounced(searchTerm.trim());
   const list = usePagedList('/api/inventory', { q: search || undefined, low_stock: lowStockOnly ? 'true' : undefined });
   const showUnits = units.length > 1;
@@ -133,8 +135,9 @@ const Inventory = () => {
                       )}
                     </td>
                     <td style={{ ...styles.td, textAlign: 'right' }}>
-                      <button style={styles.iconBtn} onClick={() => handleOpenEdit(item)}><Edit2 size={16} /></button>
-                      <button style={{ ...styles.iconBtn, color: 'var(--danger)' }} onClick={() => deleteInventoryItem(item.id)}><Trash2 size={16} /></button>
+                      <button style={styles.iconBtn} title="Entrada, ajuste e histórico" aria-label={`Movimentações de ${item.name}`} onClick={() => setMovementsItem(item)}><ArrowLeftRight size={16} /></button>
+                      <button style={styles.iconBtn} title="Editar" aria-label={`Editar ${item.name}`} onClick={() => handleOpenEdit(item)}><Edit2 size={16} /></button>
+                      <button style={{ ...styles.iconBtn, color: 'var(--danger)' }} title="Excluir" aria-label={`Excluir ${item.name}`} onClick={() => deleteInventoryItem(item.id)}><Trash2 size={16} /></button>
                     </td>
                   </tr>
                 );
@@ -151,6 +154,7 @@ const Inventory = () => {
         </div>
       </div>
       <Pagination page={list.page} pageSize={list.pageSize} total={list.total} onChange={list.setPage} loading={list.loading} />
+      {movementsItem && <StockMovementsModal item={movementsItem} onClose={() => setMovementsItem(null)} />}
 
       {isModalOpen && (
         <div className="modal-overlay">
@@ -182,7 +186,7 @@ const Inventory = () => {
                   <input type="number" step="0.01" style={styles.input} value={formData.unit_price} onChange={(e) => setFormData({...formData, unit_price: e.target.value})} />
                 </div>
                 <div style={styles.inputGroup}>
-                  <label style={styles.label}>Quantidade Atual</label>
+                  <label style={styles.label}>{editingId ? "Saldo (alterar registra um ajuste)" : "Quantidade inicial"}</label>
                   <input type="number" required style={styles.input} value={formData.quantity} onChange={(e) => setFormData({...formData, quantity: e.target.value})} />
                 </div>
                 <div style={styles.inputGroup}>

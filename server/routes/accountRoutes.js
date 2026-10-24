@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { query } = require('../utils/routeHelpers');
+const { query, buildUpdate } = require('../utils/routeHelpers');
 const { HttpError } = require('../utils/errorHandler');
 const { hashPassword } = require('../utils/passwords');
 const { signToken } = require('../middleware/auth');
@@ -12,13 +12,22 @@ const router = express.Router();
 
 // --- MEU PERFIL ---
 router.get('/me', (req, res) => {
-  res.json({ ...publicUser(req.user), tenant_status: req.user.tenant_status || null });
+  res.json({
+    ...publicUser(req.user),
+    tenant_status: req.user.tenant_status || null,
+    notifications_enabled: Boolean(req.user.notifications_enabled),
+  });
 });
 
 router.put('/me', async (req, res) => {
-  const { name } = parse(z.object({ name: text() }), req.body);
-  await query('UPDATE users SET name = ? WHERE id = ?', [name, req.user.id]);
-  res.json({ ...publicUser(req.user), name });
+  const d = parse(z.object({ name: text().optional(), notifications_enabled: z.boolean().optional() }), req.body);
+  const { sql, params } = buildUpdate(d, ['name', 'notifications_enabled']);
+  await query(`UPDATE users SET ${sql} WHERE id = ?`, [...params, req.user.id]);
+  res.json({
+    ...publicUser(req.user),
+    name: d.name ?? req.user.name,
+    notifications_enabled: d.notifications_enabled ?? Boolean(req.user.notifications_enabled),
+  });
 });
 
 router.put('/me/password', async (req, res) => {

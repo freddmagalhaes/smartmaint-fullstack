@@ -5,6 +5,7 @@ const migrations = [
   require('./002_hardening'),
   require('./003_invalidate_default_passwords'),
   require('./004_multicliente'),
+  require('./005_produto'),
 ];
 
 const helpers = (q) => ({

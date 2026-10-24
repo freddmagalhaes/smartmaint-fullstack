@@ -142,6 +142,11 @@ const Settings = () => {
     }, 'Perfil atualizado!');
   };
 
+  const handleNotificationsToggle = (enabled) => save('notifications', async () => {
+    await apiFetch('/api/me', { method: 'PUT', body: { notifications_enabled: enabled } });
+    updateCurrentUser({ notifications_enabled: enabled });
+  }, enabled ? 'Notificações por e-mail ativadas' : 'Notificações por e-mail desativadas');
+
   const handlePasswordSave = async (e) => {
     e.preventDefault();
     if (passwordForm.newPassword !== passwordForm.confirm) return toast.error('As senhas não coincidem.');
@@ -390,6 +395,21 @@ const Settings = () => {
                   {saving === 'profile' ? 'Salvando...' : 'Atualizar Perfil'}
                 </button>
               </form>
+
+              {canAdmin || user?.role === ROLES.MANAGER ? (
+                <div style={{ marginTop: '48px' }}>
+                  <SectionHeader title="Notificações" description="Avisos por e-mail de O.S. crítica, preventiva gerada, estoque abaixo do mínimo e faturas." />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px' }}>
+                    <input
+                      type="checkbox"
+                      checked={user?.notifications_enabled !== false}
+                      disabled={saving === 'notifications'}
+                      onChange={(e) => handleNotificationsToggle(e.target.checked)}
+                    />
+                    Receber notificações por e-mail
+                  </label>
+                </div>
+              ) : null}
 
               <div style={{ marginTop: '48px' }}>
                 <SectionHeader title="Alterar Senha" description="Ao trocar a senha, as outras sessões abertas com sua conta são encerradas." />

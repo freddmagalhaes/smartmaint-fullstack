@@ -5,12 +5,15 @@ import {
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import { useConfirm } from '../components/ConfirmDialog';
+import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
+import { apiFetch, withQuery } from '../api/client';
 import { formatDate, todayISO } from '../utils/format';
 import { usePagedList, useDebounced } from '../hooks/usePagedList';
 import Pagination from '../components/Pagination';
 
 const PreventiveMaintenance = () => {
-  const { equipments, addPreventivePlan, updatePreventivePlan, deletePreventivePlan } = useData();
+  const { equipments, scope, addPreventivePlan, updatePreventivePlan, deletePreventivePlan } = useData();
   const confirm = useConfirm();
   const [searchTerm, setSearchTerm] = useState('');
   const [dueFilter, setDueFilter] = useState('');
@@ -31,15 +34,23 @@ const PreventiveMaintenance = () => {
     setEditingId(null);
     setFormData({ 
       equipment_id: equipments[0]?.id || '', 
-      title: '', description: '', interval_days: 30, status: 'Ativo' 
+      title: '', description: '', interval_days: 30, status: 'Ativo',
+      auto_generate: true, lead_days: 3, checklistText: '',
     });
     setIsModalOpen(true);
   };
 
-  const handleOpenEdit = (plan) => {
+  const handleOpenEdit = async (plan) => {
     setEditingId(plan.id);
-    setFormData({ ...plan });
+    setFormData({ ...plan, auto_generate: Boolean(plan.auto_generate), checklistText: '' });
     setIsModalOpen(true);
+    // Checklist vem do detalhe do plano
+    try {
+      const detail = await apiFetch(withQuery(`/api/preventive-plans/${plan.id}`, { tenant_id: scope.tenant_id }));
+      setFormData((prev) => ({ ...prev, checklistText: detail.checklist.join('\n') }));
+    } catch (err) {
+      toast.error(err.message);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -50,6 +61,10 @@ const PreventiveMaintenance = () => {
       description: formData.description,
       interval_days: Number(formData.interval_days),
       status: formData.status,
+      auto_generate: Boolean(formData.auto_generate),
+      lead_days: Number(formData.lead_days) || 0,
+      // Um item do checklist por linha
+      checklist: (formData.checklistText || '').split('\n').map((l) => l.trim()).filter(Boolean),
     };
     const ok = editingId ? await updatePreventivePlan(editingId, data) : await addPreventivePlan(data);
     if (ok) setIsModalOpen(false);
@@ -130,6 +145,12 @@ const PreventiveMaintenance = () => {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <Clock size={14} color="var(--text-muted)" /> {plan.interval_days} dias
                       </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        {plan.auto_generate ? 'O.S. automática' : 'Manual'}{Number(plan.checklist_count) > 0 ? ` · ${plan.checklist_count} itens no checklist` : ''}
+                      </div>
+                      {plan.open_work_order_id && (
+                        <Link to={`/work-orders?open=${plan.open_work_order_id}`} style={{ fontSize: '12px', fontWeight: 600 }}>O.S. #{plan.open_work_order_id} em aberto</Link>
+                      )}
                     </td>
                     <td style={styles.td}>
                       {isLate ? (
@@ -206,6 +227,22 @@ const PreventiveMaintenance = () => {
                     <option value="Ativo">Ativo</option>
                     <option value="Pausado">Pausado</option>
                   </select>
+                </div>
+                <div style={{ ...styles.inputGroup, gridColumn: 'span 2' }}>
+                  <label style={{ ...styles.label, display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500 }}>
+                    <input type="checkbox" checked={Boolean(formData.auto_generate)} onChange={(e) => setFormData({...formData, auto_generate: e.target.checked})} />
+                    Gerar a O.S. automaticamente no vencimento
+                  </label>
+                </div>
+                {formData.auto_generate && (
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Gerar com antecedência de (dias)</label>
+                    <input type="number" min="0" max="60" style={styles.input} value={formData.lead_days ?? 0} onChange={(e) => setFormData({...formData, lead_days: e.target.value})} />
+                  </div>
+                )}
+                <div style={{ ...styles.inputGroup, gridColumn: 'span 2' }}>
+                  <label style={styles.label}>Checklist (um item por linha)</label>
+                  <textarea rows={4} style={styles.input} placeholder={'Ex.:\nVerificar nível de óleo\nLimpar filtro de ar\nMedir vibração'} value={formData.checklistText || ''} onChange={(e) => setFormData({...formData, checklistText: e.target.value})} />
                 </div>
               </div>
               <div style={styles.modalFooter}>

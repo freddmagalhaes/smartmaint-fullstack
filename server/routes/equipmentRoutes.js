@@ -3,7 +3,9 @@ const {
   query, assertEquipmentInTenant, assertUnitInTenant, defaultUnitId, assertAffected, buildUpdate,
 } = require('../utils/routeHelpers');
 const { pageParams, paginate, like } = require('../utils/pagination');
-const { assertWithinLimit } = require('../utils/plans');
+const { assertWithinLimit, getTenantPlan } = require('../utils/plans');
+const { HttpError } = require('../utils/errorHandler');
+const db = require('../db');
 const { audit } = require('../utils/audit');
 const { ROLES, MANAGERS, TENANT_ROLES, requireRole, tenantScope } = require('../middleware/rbac');
 const { parse, z, text, optionalText, id, date, nonNegative, idParam } = require('../utils/validate');
@@ -57,7 +59,8 @@ router.get('/equipments', requireRole(...TENANT_ROLES), tenantScope, async (req,
   res.json(await paginate({
     select: `e.*, u.name AS unit_name,
       (SELECT COUNT(*) FROM failures f WHERE f.equipment_id = e.id) AS failures_count,
-      (SELECT COUNT(*) FROM work_orders w WHERE w.equipment_id = e.id AND w.status = 'Em Execução') AS running_os_count`,
+      (SELECT COUNT(*) FROM work_orders w WHERE w.equipment_id = e.id AND w.status = 'Em Execução') AS running_os_count,
+      (SELECT COALESCE(SUM(p.quantity * p.unit_price), 0) FROM work_order_parts p JOIN work_orders w ON w.id = p.work_order_id WHERE w.equipment_id = e.id) AS parts_cost`,
     from: 'equipments e JOIN units u ON u.id = e.unit_id',
     where, params, orderBy: 'e.name, e.id', page, pageSize,
   }));
@@ -88,6 +91,108 @@ router.post('/equipments', requireRole(...MANAGERS), tenantScope, async (req, re
   );
   await audit(req, { action: 'create', entity: 'equipment', entityId: result.insertId, changes: d });
   res.status(201).json({ id: result.insertId, ...d, unit_id: unitId, tenant_id: req.tenantId });
+});
+
+// --- IMPORTAÇÃO POR PLANILHA ---
+const MAX_IMPORT_ROWS = 1000;
+
+// Aceita data em dd/mm/aaaa (padrão do Excel em português) ou aaaa-mm-dd
+const importDate = z.string().trim().transform((v, ctx) => {
+  if (!v) return null;
+  const br = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v);
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(v);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  ctx.addIssue({ code: 'custom', message: 'data inválida (use dd/mm/aaaa)' });
+  return z.NEVER;
+});
+// Números no formato brasileiro: "1.234,5" -> 1234.5
+const importNumber = z.union([z.number(), z.string()]).transform((v, ctx) => {
+  if (typeof v === 'number') return v;
+  const text = v.trim();
+  if (!text) return 0;
+  const n = Number(text.replace(/\./g, '').replace(',', '.'));
+  if (Number.isNaN(n) || n < 0) {
+    ctx.addIssue({ code: 'custom', message: 'número inválido' });
+    return z.NEVER;
+  }
+  return n;
+});
+const importRowSchema = z.object({
+  name: z.string().trim().min(1, 'nome é obrigatório').max(255),
+  type: z.string().trim().max(100).optional().transform((v) => v || null),
+  model: z.string().trim().max(100).optional().transform((v) => v || null),
+  serie: z.string().trim().max(100).optional().transform((v) => v || null),
+  unit: z.string().trim().max(255).optional().transform((v) => v || null),
+  // Horas de operação são guardadas em horas inteiras
+  total_op_time: importNumber.optional().transform((v) => Math.round(v ?? 0)),
+  data_inicio: importDate.optional().transform((v) => v ?? null),
+});
+
+/**
+ * Importa equipamentos de uma planilha (o frontend lê CSV/XLSX e envia as linhas).
+ * Tudo ou nada: com qualquer erro, nada é gravado e a resposta traz o erro de cada linha.
+ * Com dry_run=true apenas valida (pré-visualização).
+ */
+router.post('/equipments/import', requireRole(...MANAGERS), tenantScope, async (req, res) => {
+  const { rows, dry_run: dryRun, default_unit_id: defaultUnit } = parse(z.object({
+    rows: z.array(z.record(z.string(), z.any())).min(1, 'a planilha está vazia').max(MAX_IMPORT_ROWS, `máximo de ${MAX_IMPORT_ROWS} linhas por importação`),
+    dry_run: z.boolean().default(false),
+    // Unidade usada nas linhas sem a coluna "Unidade" (a unidade escolhida na tela)
+    default_unit_id: id.nullish(),
+  }), req.body);
+
+  const units = await query('SELECT id, name FROM units WHERE tenant_id = ? ORDER BY id', [req.tenantId]);
+  if (defaultUnit && !units.some((u) => u.id === defaultUnit)) throw new HttpError(400, 'Unidade não encontrada para este cliente');
+  const unitByName = new Map(units.map((u) => [u.name.trim().toLowerCase(), u.id]));
+  const errors = [];
+  const valid = [];
+  rows.forEach((raw, index) => {
+    const line = index + 2; // linha 1 = cabeçalho
+    const result = importRowSchema.safeParse(raw);
+    if (!result.success) {
+      const issue = result.error.issues[0];
+      errors.push({ line, message: `${issue.path.join('.') || 'linha'}: ${issue.message}` });
+      return;
+    }
+    const row = result.data;
+    let unitId = defaultUnit || units[0]?.id;
+    if (row.unit) {
+      unitId = unitByName.get(row.unit.toLowerCase());
+      if (!unitId) {
+        errors.push({ line, message: `unidade "${row.unit}" não existe (cadastradas: ${units.map((u) => u.name).join(', ')})` });
+        return;
+      }
+    } else if (units.length > 1 && !defaultUnit) {
+      errors.push({ line, message: 'informe a coluna Unidade ou escolha uma unidade no topo da tela antes de importar' });
+      return;
+    }
+    valid.push({ ...row, unit_id: unitId, line });
+  });
+
+  // Limite do plano considera o total depois da importação
+  const plan = await getTenantPlan(req.tenantId);
+  if (plan?.max_equipments !== null && plan?.max_equipments !== undefined) {
+    const [{ n }] = await query('SELECT COUNT(*) AS n FROM equipments WHERE tenant_id = ?', [req.tenantId]);
+    if (Number(n) + valid.length > plan.max_equipments) {
+      errors.push({ line: null, message: `O plano ${plan.name} permite até ${plan.max_equipments} equipamentos; você tem ${n} e está importando ${valid.length}.` });
+    }
+  }
+
+  if (errors.length || dryRun) {
+    return res.status(errors.length ? 422 : 200).json({ valid: valid.length, errors, imported: 0 });
+  }
+
+  await db.transaction(async (q) => {
+    for (const row of valid) {
+      await q(
+        'INSERT INTO equipments (tenant_id, unit_id, name, type, model, serie, total_op_time, data_inicio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [req.tenantId, row.unit_id, row.name, row.type, row.model, row.serie, row.total_op_time, row.data_inicio]
+      );
+    }
+  });
+  await audit(req, { action: 'import', entity: 'equipment', changes: { quantidade: valid.length } });
+  res.status(201).json({ valid: valid.length, errors: [], imported: valid.length });
 });
 
 router.put('/equipments/:id', requireRole(...MANAGERS), tenantScope, async (req, res) => {

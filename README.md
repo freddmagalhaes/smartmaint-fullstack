@@ -5,10 +5,12 @@ SmartMaint é uma plataforma SaaS para gestão de ativos e manutenção industri
 ## 🚀 Funcionalidades
 
 - **📊 Dashboard:** disponibilidade, MTBF, taxa de falha, O.S. ativas e histórico de falhas e horas de reparo.
-- **📋 Ordens de Serviço:** abertura, execução, pausa e conclusão com tempo real de reparo; impressão da O.S.
+- **📋 Ordens de Serviço:** abertura, execução, pausa e conclusão com tempo real de reparo; checklist, peças com baixa automática no estoque, fotos/anexos, comentários e impressão da O.S.
 - **⚙️ Equipamentos:** cadastro com foto e status de manutenção.
-- **📅 Planos Preventivos:** intervalos recorrentes, vencimentos e registro de execução.
-- **📦 Estoque:** peças, estoque mínimo e valores.
+- **📅 Planos Preventivos:** geram a O.S. automaticamente no vencimento (com antecedência configurável) e checklist padrão; concluir a O.S. recalcula o próximo vencimento.
+- **📦 Estoque:** peças por unidade ou compartilhadas, estoque mínimo, entrada, ajuste por contagem e histórico de movimentações; custo de peças por O.S. e por equipamento.
+- **📥 Importação:** equipamentos por planilha Excel (.xlsx) ou CSV, com pré-visualização e erros por linha.
+- **✉️ Notificações por e-mail:** O.S. crítica, preventiva gerada, estoque abaixo do mínimo, fatura vencendo e em atraso (cada aviso uma única vez; o usuário pode desligar no perfil).
 - **⚠️ Falhas e Reparos:** histórico usado nos indicadores.
 - **🔍 FMEA:** RPN (Severidade × Ocorrência × Detecção).
 - **📈 Simulador R(t):** confiabilidade por equipamento.
