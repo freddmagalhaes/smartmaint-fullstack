@@ -13,6 +13,9 @@ import { formatCurrency, formatDate, parseLocalDate } from '../utils/format';
 import PlansTab from './backoffice/PlansTab';
 import FiscalTab from './backoffice/FiscalTab';
 
+// Forma de pagamento da assinatura (Configurações → Faturamento do cliente)
+const BILLING_METHODS = { card: 'Cartão', pix_automatico: 'Pix Automático', boleto: 'Boleto', pix: 'Pix' };
+
 const Backoffice = () => {
   const { user, token, switchTenant, refreshTenants } = useAuth();
   const confirm = useConfirm();
@@ -117,7 +120,7 @@ const Backoffice = () => {
   const activeClients = tenants.filter(t => t.status === 'Ativo').length;
   const totalUsers = tenants.reduce((a, t) => a + (t.users_count || 0), 0);
   const pendingValue = tenants.reduce((a, t) => a + parseFloat(t.pending_value || 0), 0);
-  const getColor = (s) => s === 'Ativo' ? '#10b981' : s === 'Inadimplente' ? '#f59e0b' : '#ef4444';
+  const getColor = (s) => s === 'Ativo' ? '#10b981' : s === 'Trial' ? '#3b82f6' : s === 'Inadimplente' ? '#f59e0b' : '#ef4444';
   const getInvColor = (s) => s === 'Paga' ? '#10b981' : s === 'Atrasada' ? '#ef4444' : '#f59e0b';
 
   if (loading) return <div className="flex-center" style={{ height: '50vh' }}><RefreshCw /></div>;
@@ -245,7 +248,10 @@ const Backoffice = () => {
                     <p style={{ fontWeight: '600', fontSize: '14px' }}>{t.name}</p>
                     <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>ID: {t.id} {t.contact_email && `• ${t.contact_email}`}</p>
                   </td>
-                  <td style={{ padding: '14px 20px' }}><span style={{ padding: '3px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', background: '#f1f5f9' }}>{t.plan_type}</span></td>
+                  <td style={{ padding: '14px 20px' }}>
+                    <span style={{ padding: '3px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', background: '#f1f5f9' }}>{t.plan_type}</span>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>{BILLING_METHODS[t.billing_method] || 'Sem assinatura'}</div>
+                  </td>
                   <td style={{ padding: '14px 20px', fontWeight: '600' }}>{t.users_count}</td>
                   <td style={{ padding: '14px 20px', fontWeight: '600' }}>{t.equipments_count}</td>
                   <td style={{ padding: '14px 20px' }}>

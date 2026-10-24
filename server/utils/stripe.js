@@ -4,9 +4,9 @@ const { config } = require('../config');
 const stripe = config.stripe.secretKey ? Stripe(config.stripe.secretKey) : null;
 
 /** Cria uma sessão de Checkout do Stripe para a fatura e devolve a URL de pagamento. */
-const createCheckoutSession = async (tenant, invoice) => {
+const createCheckoutSession = async (tenant, invoice, methods = config.stripe.paymentMethods) => {
   const session = await stripe.checkout.sessions.create({
-    payment_method_types: config.stripe.paymentMethods,
+    payment_method_types: methods,
     line_items: [
       {
         price_data: {
@@ -21,6 +21,7 @@ const createCheckoutSession = async (tenant, invoice) => {
       },
     ],
     mode: 'payment',
+    locale: 'pt-BR',
     success_url: `${config.frontendUrl}/settings?tab=billing&success=true`,
     cancel_url: `${config.frontendUrl}/settings?tab=billing&canceled=true`,
     customer_email: tenant.contact_email || undefined,

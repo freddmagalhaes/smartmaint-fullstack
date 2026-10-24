@@ -165,7 +165,7 @@ preenchidos. Os demais começam vazios (a integração fica desligada) e são ed
 | Chave | Onde obter |
 |---|---|
 | `STRIPE_SECRET_KEY` | Stripe > Developers > API keys (`sk_live_...`) |
-| `STRIPE_WEBHOOK_SECRET` | Stripe > Developers > Webhooks > Add endpoint `https://<domínio>/api/billing/webhook`, eventos `checkout.session.completed` e `checkout.session.async_payment_succeeded` (`whsec_...`) |
+| `STRIPE_WEBHOOK_SECRET` | Stripe > Developers > Webhooks > Add endpoint `https://<domínio>/api/billing/webhook`, com os eventos listados no README principal, seção "Assinatura e cobrança" (`whsec_...`) |
 | `SENTRY_DSN` | Sentry > Project settings > Client keys |
 | `NFSE_CERT_BASE64` | Certificado A1 (.pfx) em base64: `base64 -w0 certificado.pfx` |
 | `NFSE_CERT_PASSWORD` | Senha do certificado A1 |

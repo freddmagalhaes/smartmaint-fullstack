@@ -17,7 +17,7 @@ SmartMaint é uma plataforma SaaS para gestão de ativos e manutenção industri
 - **🏭 Unidades fabris:** várias plantas ou filiais por cliente, com filtro por unidade em todas as telas.
 - **🏢 Backoffice:** clientes, contratos, faturas, planos e limites, dados fiscais, equipe de suporte e acesso assistido aos dados do cliente.
 - **🧾 Auditoria:** histórico de acessos e alterações por cliente.
-- **💳 Cobrança:** pagamento via Stripe (cartão e boleto), baixa automática por webhook e bloqueio de inadimplentes.
+- **💳 Assinatura mensal:** cartão recorrente com 30 dias grátis, boleto e Pix (Pix Automático quando disponível), troca de plano, cancelamento, baixa automática por webhook e bloqueio de inadimplentes.
 
 ## 👥 Perfis de acesso
 
@@ -45,6 +45,25 @@ As permissões são aplicadas no backend (a interface apenas esconde o que o per
 ## 📐 Planos e limites
 
 Os planos (`Starter`, `Pro`, `Enterprise`) ficam na tabela `plans` e são editados pelo Root em **Backoffice → Planos**: preço mensal, dias de teste e limites de usuários, equipamentos e unidades (em branco = ilimitado). Ao atingir o limite, a criação é bloqueada com a mensagem do plano (`403 PLAN_LIMIT`), e o administrador do cliente vê o uso em **Configurações → Faturamento**. Os valores iniciais são provisórios.
+
+## 💳 Assinatura e cobrança
+
+O administrador do cliente assina em **Configurações → Faturamento**, escolhendo o plano e a forma de pagamento:
+
+| Forma | Como cobra | Teste grátis |
+|---|---|---|
+| Cartão de crédito | Assinatura no Stripe, cobrada automaticamente todo mês | Sim (dias do plano, uma vez por cliente) |
+| Pix Automático | Assinatura no Stripe com autorização no app do banco | Sim. Fica oculto até `STRIPE_PIX_AUTOMATICO=true` |
+| Boleto | O SmartMaint gera a fatura do mês `BILLING_INVOICE_LEAD_DAYS` antes do vencimento; o cliente paga pelo Checkout | Não |
+| Pix | Igual ao boleto, com QR Code Pix | Não |
+
+- O valor é o `valor_mensal` negociado no contrato do cliente ou, se vazio, o preço do plano.
+- Cada cobrança do Stripe vira uma fatura no histórico; fatura paga entra na fila da NFS-e.
+- Cartão recusado: a fatura fica "Atrasada", o Stripe tenta cobrar de novo e o cliente pode trocar o cartão em **Gerenciar pagamento** (portal do Stripe). Depois de `BILLING_GRACE_DAYS`, o acesso é bloqueado.
+- Troca de plano: no cartão a diferença é proporcional; no boleto/Pix vale a partir da próxima fatura. Não é possível trocar para um plano menor que o uso atual.
+- Cancelamento: no cartão vale no fim do período pago; no boleto/Pix as faturas param de ser geradas.
+
+No Stripe: cadastre o webhook `https://SEU_DOMINIO/api/billing/webhook` com os eventos `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.trial_will_end`, `invoice.paid` e `invoice.payment_failed`. Em **Settings → Billing → Customer portal**, ative a troca de forma de pagamento e o cancelamento. Em **Settings → Billing → Subscriptions and emails**, ative as novas tentativas automáticas (Smart Retries) e os e-mails de cartão recusado.
 
 ## 🧾 NFS-e (Emissor Nacional)
 
@@ -130,7 +149,7 @@ Recomendações para produção (já aplicadas pelo Terraform):
 - **Arquivos:** defina `S3_BUCKET` (o disco do container é perdido a cada deploy). A role da aplicação precisa de `s3:PutObject` e `s3:GetObject`.
 - **HTTPS:** termine o TLS no ALB/CloudFront, defina `TRUST_PROXY=1` e `FORCE_HTTPS=true`.
 - **Segredos:** `JWT_SECRET` (mínimo de 32 caracteres), credenciais de banco, SMTP e Stripe via Secrets Manager/SSM, nunca na imagem.
-- **Stripe:** cadastre o webhook `https://SEU_DOMINIO/api/billing/webhook` com os eventos `checkout.session.completed` e `checkout.session.async_payment_succeeded`.
+- **Stripe:** cadastre o webhook `https://SEU_DOMINIO/api/billing/webhook` com os eventos listados em [Assinatura e cobrança](#-assinatura-e-cobrança).
 - **Logs e alarmes:** CloudWatch para os logs do container e alarme no health check.
 
 O `Dockerfile.api` gera apenas a API, para quem hospeda o frontend separadamente.

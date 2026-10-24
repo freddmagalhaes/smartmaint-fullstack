@@ -95,4 +95,15 @@ const invoiceReminder = (tenantId, invoice, kind) => notifyTenant(tenantId, {
   cta: { label: 'Pagar fatura', url: link('/settings?tab=billing') },
 });
 
-module.exports = { notifyTenant, criticalWorkOrder, preventiveGenerated, lowStock, invoiceReminder };
+const trialEnding = (tenantId, subscription) => notifyTenant(tenantId, {
+  kind: 'teste_terminando',
+  refKey: `${subscription.id}:${subscription.trial_end}`,
+  roles: BILLING_ROLES,
+  subject: 'Seu teste grátis termina em breve',
+  title: 'Seu teste grátis termina em breve',
+  body: p(`O período de teste termina em ${new Date(subscription.trial_end * 1000).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}.`)
+    + p('Depois disso, a mensalidade será cobrada automaticamente na forma de pagamento cadastrada. Para cancelar ou trocar o cartão, acesse o faturamento.'),
+  cta: { label: 'Ver assinatura', url: link('/settings?tab=billing') },
+});
+
+module.exports = { notifyTenant, criticalWorkOrder, preventiveGenerated, lowStock, invoiceReminder, trialEnding };

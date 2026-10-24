@@ -6,6 +6,7 @@ const migrations = [
   require('./003_invalidate_default_passwords'),
   require('./004_multicliente'),
   require('./005_produto'),
+  require('./006_assinaturas'),
 ];
 
 const helpers = (q) => ({
