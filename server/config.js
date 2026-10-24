@@ -21,7 +21,8 @@ const config = {
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'smartmaint_db',
     port: Number(process.env.DB_PORT) || 3306,
-    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' } : undefined,
+    // DB_SSL=rds usa os certificados da AWS embutidos no mysql2; DB_SSL=true usa os certificados do sistema
+    ssl: process.env.DB_SSL === 'rds' ? 'Amazon RDS' : process.env.DB_SSL === 'true' ? { rejectUnauthorized: true } : undefined,
   },
   rateLimit: {
     apiMax: Number(process.env.RATE_LIMIT_API_MAX) || 1000,

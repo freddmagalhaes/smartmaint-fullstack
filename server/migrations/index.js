@@ -3,6 +3,7 @@ const db = require('../db');
 const migrations = [
   require('./001_initial'),
   require('./002_hardening'),
+  require('./003_invalidate_default_passwords'),
 ];
 
 const helpers = (q) => ({
