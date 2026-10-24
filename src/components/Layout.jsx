@@ -19,7 +19,8 @@ import {
   ArrowLeft,
   Package,
   CalendarCheck,
-  Factory
+  Factory,
+  FileBarChart
 } from 'lucide-react';
 import logo from '../assets/logo.png';
 import { PageLoader } from './ProtectedRoute';
@@ -37,6 +38,7 @@ const NAV_ITEMS = [
   { label: 'Simulador R(t)', path: '/simulator', icon: Calculator, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   { label: 'Planos Preventivos', path: '/preventive', icon: CalendarCheck, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   { label: 'Gestão de Estoque', path: '/inventory', icon: Package, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
+  { label: 'Relatórios', path: '/reports', icon: FileBarChart, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   { label: 'Configurações', path: '/settings', icon: Settings, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER, USER] },
 ];
 

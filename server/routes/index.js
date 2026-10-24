@@ -29,6 +29,7 @@ router.use(require('./dashboardRoutes'));
 router.use(require('./auditRoutes'));
 router.use(require('./planRoutes'));
 router.use(require('./fiscalRoutes'));
+router.use(require('./reportRoutes'));
 
 router.use(notFound);
 
