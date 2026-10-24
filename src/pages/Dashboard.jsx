@@ -12,6 +12,7 @@ import {
   calculateLambda, calculateMTBF, calculateMTTR, calculateAvailability, formatPercent, formatHours 
 } from '../utils/formulas';
 import { useData } from '../contexts/DataContext';
+import OnboardingChecklist from '../components/OnboardingChecklist';
 
 const Dashboard = () => {
   const { scope, dataVersion } = useData();
@@ -75,6 +76,8 @@ const Dashboard = () => {
           {new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
         </div>
       </header>
+
+      <OnboardingChecklist />
 
       {/* Grid de Estatísticas Principais */}
       <div style={styles.statsGrid}>

@@ -22,6 +22,7 @@ const Inventory = lazy(() => import('./pages/Inventory'));
 const Settings = lazy(() => import('./pages/Settings'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const Backoffice = lazy(() => import('./pages/Backoffice'));
+const Reports = lazy(() => import('./pages/Reports'));
 const Signup = lazy(() => import('./pages/Signup'));
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
 const Terms = lazy(() => import('./pages/legal/Terms'));
@@ -38,6 +39,7 @@ const APP_ROUTES = [
   { path: '/inventory', element: <Inventory />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   { path: '/failures', element: <Failures />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   { path: '/fmea', element: <FMEA />, roles: [ROOT, BACKOFFICE, ADMIN] },
+  { path: '/reports', element: <Reports />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   { path: '/simulator', element: <Simulator />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   // Configurações: todos (aba "Meu Perfil"); as demais abas são filtradas por perfil
   { path: '/settings', element: <Settings />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER, USER] },

@@ -8,6 +8,7 @@ const migrations = [
   require('./005_produto'),
   require('./006_assinaturas'),
   require('./007_lgpd_cadastro'),
+  require('./008_relatorios_onboarding'),
 ];
 
 const helpers = (q) => ({
