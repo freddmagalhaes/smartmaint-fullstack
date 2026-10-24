@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { config } = require('../config');
 const { isBackoffice } = require('./rbac');
+const { LEGAL_VERSION } = require('../utils/legal');
 
 const BLOCKED_STATUSES = ['Inadimplente', 'Cancelado'];
 
@@ -29,7 +30,8 @@ const authMiddleware = async (req, res, next) => {
   }
 
   const [rows] = await db.query(
-    `SELECT u.id, u.tenant_id, u.name, u.email, u.role, u.is_master, u.token_version, u.notifications_enabled, t.status AS tenant_status
+    `SELECT u.id, u.tenant_id, u.name, u.email, u.role, u.is_master, u.token_version, u.notifications_enabled,
+            u.legal_version_accepted, t.status AS tenant_status
      FROM users u LEFT JOIN tenants t ON t.id = u.tenant_id WHERE u.id = ?`,
     [payload.id]
   );
@@ -47,4 +49,25 @@ const authMiddleware = async (req, res, next) => {
   next();
 };
 
-module.exports = { authMiddleware, signToken, BLOCKED_STATUSES };
+/** Usuário do cliente que ainda não aceitou a versão vigente dos Termos e da Política de Privacidade. */
+const legalPending = (user) => !isBackoffice(user) && user.legal_version_accepted !== LEGAL_VERSION;
+
+/** Até aceitar os documentos legais, o usuário só acessa o próprio perfil e o aceite. */
+const requireLegalAcceptance = (req, res, next) => {
+  if (legalPending(req.user)) {
+    return res.status(403).json({ error: 'Aceite os Termos de Uso e a Política de Privacidade para continuar.', code: 'LEGAL_ACCEPTANCE_REQUIRED' });
+  }
+  next();
+};
+
+// Conta criada pelo cadastro e ainda sem assinatura: só faturamento, planos e dados da empresa
+const PENDING_ALLOWED = [/^\/billing\//, /^\/plans$/, /^\/tenants?$/, /^\/export$/];
+
+const requireSubscription = (req, res, next) => {
+  if (!isBackoffice(req.user) && req.user.tenant_status === 'Pendente' && !PENDING_ALLOWED.some((re) => re.test(req.path))) {
+    return res.status(403).json({ error: 'Escolha um plano para começar a usar o SmartMaint.', code: 'SUBSCRIPTION_REQUIRED' });
+  }
+  next();
+};
+
+module.exports = { authMiddleware, signToken, BLOCKED_STATUSES, legalPending, requireLegalAcceptance, requireSubscription };

@@ -16,6 +16,7 @@ export const PageLoader = () => (
 /** Página inicial de cada perfil. */
 export const homePathFor = (user, isBackoffice, activeTenant) => {
   if (isBackoffice && !activeTenant) return '/backoffice';
+  if (!isBackoffice && user?.tenant_status === 'Pendente') return '/settings?tab=billing';
   if (user?.role === ROLES.USER) return '/work-orders';
   return '/';
 };
@@ -42,6 +43,11 @@ const ProtectedRoute = ({ children, allowedRoles, requireTenant = true }) => {
 
   if (requireTenant && !activeTenant) {
     return <Navigate to={isBackoffice ? '/backoffice' : '/login'} replace />;
+  }
+
+  // Conta ainda sem assinatura: só a tela de faturamento (o backend aplica a mesma regra)
+  if (!isBackoffice && user.tenant_status === 'Pendente' && location.pathname !== '/settings') {
+    return <Navigate to="/settings?tab=billing" replace />;
   }
 
   if (allowedRoles && !hasRole(allowedRoles)) {

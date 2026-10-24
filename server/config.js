@@ -60,6 +60,20 @@ const config = {
     certPath: process.env.NFSE_CERT_PATH,
     certPassword: process.env.NFSE_CERT_PASSWORD,
   },
+  // Dados da empresa nos Termos de Uso e na Política de Privacidade (preencha quando o CNPJ sair)
+  legal: {
+    companyName: process.env.LEGAL_COMPANY_NAME || 'SmartMaint',
+    cnpj: process.env.LEGAL_CNPJ || '',
+    address: process.env.LEGAL_ADDRESS || 'São José da Lapa/MG',
+    contactEmail: process.env.LEGAL_CONTACT_EMAIL || process.env.SMTP_FROM || '',
+    dpoName: process.env.LEGAL_DPO_NAME || '',
+  },
+  signup: {
+    // Cadastro pelo próprio cliente (página /cadastro). Exige SMTP em produção para confirmar o e-mail.
+    enabled: process.env.SIGNUP_ENABLED !== 'false',
+    // Contas que nunca assinaram são apagadas após N dias (minimização de dados, LGPD)
+    pendingRetentionDays: Number(process.env.SIGNUP_PENDING_RETENTION_DAYS) || 30,
+  },
   uploads: {
     dir: process.env.UPLOAD_DIR || require('path').join(__dirname, 'uploads'),
     s3Bucket: process.env.S3_BUCKET,
@@ -80,6 +94,8 @@ const validateConfig = () => {
   const logger = require('./utils/logger');
   if (isProduction && !config.smtp.host) logger.warn('⚠️ SMTP não configurado: e-mails (convites, recuperação de senha) não serão enviados.');
   if (isProduction && !config.stripe.secretKey) logger.warn('⚠️ STRIPE_SECRET_KEY não configurada: pagamentos online desativados.');
+  if (isProduction && !config.legal.contactEmail) logger.warn('⚠️ LEGAL_CONTACT_EMAIL não definido: a Política de Privacidade fica sem o e-mail para pedidos de titulares (LGPD).');
+  if (isProduction && config.signup.enabled && !config.smtp.host) logger.warn('⚠️ Cadastro pelo próprio cliente desativado: precisa de SMTP para confirmar o e-mail.');
   if (config.stripe.secretKey && !config.stripe.webhookSecret) logger.warn('⚠️ STRIPE_WEBHOOK_SECRET não configurado: faturas pagas não serão baixadas automaticamente.');
 };
 

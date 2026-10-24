@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useAuth, isBackofficeUser } from '../contexts/AuthContext';
 import { homePathFor } from '../components/ProtectedRoute';
 import { apiFetch } from '../api/client';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { usePublicInfo } from '../api/publicInfo';
 import { LogIn, Mail, Lock, Loader2, Info, X } from 'lucide-react';
 import logo from '../assets/logo.png';
 
@@ -15,6 +16,9 @@ const Login = () => {
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotMessage, setForgotMessage] = useState('');
   const [isForgotLoading, setIsForgotLoading] = useState(false);
+  const [unverified, setUnverified] = useState(false);
+  const [resendMessage, setResendMessage] = useState('');
+  const info = usePublicInfo();
   
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -22,6 +26,7 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setResendMessage('');
     setIsLoading(true);
 
     const result = await login(email, password);
@@ -30,6 +35,16 @@ const Login = () => {
       navigate(homePathFor(result.user, isBackofficeUser(result.user), result.user.tenant_id), { replace: true });
     } else {
       setError(result.error);
+      setUnverified(result.code === 'EMAIL_NOT_VERIFIED');
+    }
+  };
+
+  const resendVerification = async () => {
+    try {
+      const data = await apiFetch('/api/signup/resend', { method: 'POST', body: { email }, auth: false });
+      setResendMessage(data.message);
+    } catch (err) {
+      setResendMessage(err.message);
     }
   };
 
@@ -65,10 +80,15 @@ const Login = () => {
 
         <form onSubmit={handleSubmit} style={styles.form}>
           {error && (
-            <div style={styles.errorBanner}>
+            <div style={styles.errorBanner} role="alert">
               <Info size={18} />
               {error}
             </div>
+          )}
+          {unverified && (
+            resendMessage
+              ? <p style={styles.footerText}>{resendMessage}</p>
+              : <button type="button" style={styles.forgotBtn} onClick={resendVerification}>Reenviar e-mail de confirmação</button>
           )}
 
           <div style={styles.inputGroup}>
@@ -132,7 +152,16 @@ const Login = () => {
         </form>
 
         <div style={styles.footer}>
-          <p style={styles.footerText}>Acesso restrito a colaboradores autorizados.</p>
+          {info?.signup_enabled && (
+            <p style={{ fontSize: '14px', marginBottom: '12px' }}>
+              Ainda não usa o SmartMaint? <Link to="/cadastro" style={{ color: 'var(--primary)', fontWeight: 600 }}>Crie sua conta</Link>
+            </p>
+          )}
+          <p style={styles.footerText}>
+            <Link to="/termos" style={{ color: 'inherit' }}>Termos de Uso</Link>
+            {' · '}
+            <Link to="/privacidade" style={{ color: 'inherit' }}>Política de Privacidade</Link>
+          </p>
         </div>
       </div>
 

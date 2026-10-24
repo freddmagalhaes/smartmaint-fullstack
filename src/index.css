@@ -160,6 +160,12 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* Termos de Uso e Política de Privacidade */
+.legal-text h2 { font-size: 18px; font-weight: 700; margin: 28px 0 8px; color: var(--text-main); }
+.legal-text p { margin-bottom: 12px; }
+.legal-text ul { margin: 0 0 12px 20px; display: flex; flex-direction: column; gap: 6px; }
+.legal-text a { color: var(--primary); text-decoration: underline; }
+
 /* Texto só para leitores de tela */
 .sr-only {
   position: absolute;

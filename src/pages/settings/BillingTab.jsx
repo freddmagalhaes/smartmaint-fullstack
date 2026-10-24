@@ -27,7 +27,8 @@ const STATUS_LABELS = {
 
 /** Assinatura do SmartMaint: plano, forma de pagamento, teste grátis e faturas. */
 const BillingTab = () => {
-  const { activeTenant, refreshTenants } = useAuth();
+  const { activeTenant, refreshTenants, refreshMe, user, isBackoffice } = useAuth();
+  const isPending = !isBackoffice && user?.tenant_status === 'Pendente';
   const [searchParams] = useSearchParams();
   const [subscription, setSubscription] = useState(null);
   const [plans, setPlans] = useState([]);
@@ -47,6 +48,8 @@ const BillingTab = () => {
         apiFetch(scoped('/api/billing/invoices')),
       ]);
       setSubscription(sub);
+      // Assinatura ou pagamento podem ter mudado o status do cliente (ex.: Pendente → Trial)
+      if (!isBackoffice) refreshMe();
       setPlans(planList.filter((p) => p.active));
       setInvoices(invoiceList);
       setChoice((c) => ({ plan_id: c.plan_id || sub.plan_id, method: sub.methods.includes(c.method) ? c.method : sub.methods[0] }));
@@ -54,7 +57,7 @@ const BillingTab = () => {
       toast.error(err.message);
     }
     apiFetch(scoped('/api/billing/usage')).then(setUsage).catch(() => setUsage(null));
-  }, [activeTenant, scoped]);
+  }, [activeTenant, scoped, isBackoffice, refreshMe]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -121,6 +124,14 @@ const BillingTab = () => {
         <h3 style={styles.title}>Plano e Faturamento</h3>
         <p style={styles.muted}>Assinatura mensal do SmartMaint e histórico de pagamentos.</p>
       </div>
+
+      {isPending && (
+        <p style={styles.info}>
+          {subscription.active
+            ? 'Assinatura registrada. O acesso completo é liberado assim que o primeiro pagamento for confirmado (boleto: até 3 dias úteis).'
+            : 'Bem-vindo ao SmartMaint! Escolha um plano e a forma de pagamento para liberar o acesso ao sistema.'}
+        </p>
+      )}
 
       {!subscription.online_payments && (
         <p style={styles.notice}>Pagamento online indisponível no momento. Entre em contato com o suporte para regularizar sua assinatura.</p>

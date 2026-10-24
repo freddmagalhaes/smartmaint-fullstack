@@ -120,7 +120,7 @@ const Backoffice = () => {
   const activeClients = tenants.filter(t => t.status === 'Ativo').length;
   const totalUsers = tenants.reduce((a, t) => a + (t.users_count || 0), 0);
   const pendingValue = tenants.reduce((a, t) => a + parseFloat(t.pending_value || 0), 0);
-  const getColor = (s) => s === 'Ativo' ? '#10b981' : s === 'Trial' ? '#3b82f6' : s === 'Inadimplente' ? '#f59e0b' : '#ef4444';
+  const getColor = (s) => s === 'Ativo' ? '#10b981' : s === 'Trial' ? '#3b82f6' : s === 'Pendente' ? '#64748b' : s === 'Inadimplente' ? '#f59e0b' : '#ef4444';
   const getInvColor = (s) => s === 'Paga' ? '#10b981' : s === 'Atrasada' ? '#ef4444' : '#f59e0b';
 
   if (loading) return <div className="flex-center" style={{ height: '50vh' }}><RefreshCw /></div>;

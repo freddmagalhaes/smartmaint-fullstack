@@ -179,6 +179,10 @@ app_environment = {
 }
 ```
 
+No mesmo `app_environment`, preencha os dados que aparecem nos Termos de Uso e na Política de
+Privacidade: `LEGAL_COMPANY_NAME`, `LEGAL_CNPJ`, `LEGAL_ADDRESS`, `LEGAL_CONTACT_EMAIL` (obrigatório:
+recebe os pedidos de titulares de dados) e `LEGAL_DPO_NAME`.
+
 Depois rode `terraform apply`. O ECS lê os segredos quando o container inicia, então qualquer
 mudança (no segredo ou no `terraform.tfvars`) só vale após um novo deploy: **Actions > Deploy > Run workflow**.
 

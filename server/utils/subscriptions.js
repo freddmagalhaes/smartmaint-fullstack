@@ -281,9 +281,9 @@ const syncSubscription = async (subscriptionId, hintTenantId) => {
       ]
     );
     if (sub.status === 'trialing') {
-      await q("UPDATE tenants SET status = 'Trial' WHERE id = ? AND status IN ('Ativo', 'Trial', 'Cancelado')", [tenant.id]);
+      await q("UPDATE tenants SET status = 'Trial' WHERE id = ? AND status IN ('Ativo', 'Trial', 'Cancelado', 'Pendente')", [tenant.id]);
     } else if (sub.status === 'active') {
-      await q("UPDATE tenants SET status = 'Ativo' WHERE id = ? AND status IN ('Trial', 'Cancelado')", [tenant.id]);
+      await q("UPDATE tenants SET status = 'Ativo' WHERE id = ? AND status IN ('Trial', 'Cancelado', 'Pendente')", [tenant.id]);
     } else if (ended) {
       // Encerrada com faturas em atraso: a rotina de cobrança cuida do bloqueio (Inadimplente)
       const [{ overdue }] = await q("SELECT COUNT(*) AS overdue FROM invoices WHERE tenant_id = ? AND status = 'Atrasada'", [tenant.id]);

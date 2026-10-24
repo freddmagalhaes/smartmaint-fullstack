@@ -24,6 +24,7 @@ import {
 import logo from '../assets/logo.png';
 import { PageLoader } from './ProtectedRoute';
 import ErrorBoundary from './ErrorBoundary';
+import LegalAcceptance from './LegalAcceptance';
 
 const { ROOT, BACKOFFICE, ADMIN, MANAGER, USER } = ROLES;
 
@@ -49,6 +50,9 @@ const Layout = ({ children }) => {
   const location = useLocation();
 
   const tenantName = tenants.find(t => t.id === activeTenant)?.name || user?.company;
+  // Conta criada pelo cadastro e ainda sem assinatura: só Configurações (faturamento)
+  const isPending = !isBackoffice && user?.tenant_status === 'Pendente';
+  const legalPending = !isBackoffice && user?.legal_pending;
 
   const handleLogout = () => {
     logout();
@@ -78,7 +82,7 @@ const Layout = ({ children }) => {
         </div>
 
         <nav className="app-nav">
-          {NAV_ITEMS.filter((item) => hasRole(item.roles)).map((item) => {
+          {NAV_ITEMS.filter((item) => hasRole(item.roles) && (!isPending || item.path === '/settings')).map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <Link
@@ -168,7 +172,7 @@ const Layout = ({ children }) => {
           {/* key: ao trocar de página, uma tela que quebrou volta a funcionar */}
           <ErrorBoundary key={location.pathname}>
             <Suspense fallback={<PageLoader />}>
-              {children}
+              {legalPending ? <LegalAcceptance /> : children}
             </Suspense>
           </ErrorBoundary>
         </div>

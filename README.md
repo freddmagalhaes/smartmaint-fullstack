@@ -65,6 +65,14 @@ O administrador do cliente assina em **Configurações → Faturamento**, escolh
 
 No Stripe: cadastre o webhook `https://SEU_DOMINIO/api/billing/webhook` com os eventos `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.trial_will_end`, `invoice.paid` e `invoice.payment_failed`. Em **Settings → Billing → Customer portal**, ative a troca de forma de pagamento e o cancelamento. Em **Settings → Billing → Subscriptions and emails**, ative as novas tentativas automáticas (Smart Retries) e os e-mails de cartão recusado.
 
+## 📝 Cadastro, Termos de Uso e LGPD
+
+- **Cadastro pelo próprio cliente** (`/cadastro`): a empresa informa nome, e-mail e senha, aceita os documentos e recebe um link de confirmação (válido por 48 h). Confirmado o e-mail, a conta fica **Pendente**: só o faturamento fica acessível até a assinatura (cartão com teste grátis) ou o primeiro pagamento (boleto/Pix). Proteções: limite de cadastros por IP, campo invisível contra robôs e resposta igual para e-mails já cadastrados. Contas que nunca assinam são apagadas após `SIGNUP_PENDING_RETENTION_DAYS` (30). Desligue com `SIGNUP_ENABLED=false`. Em produção o cadastro exige SMTP.
+- **Termos de Uso** (`/termos`) e **Política de Privacidade** (`/privacidade`): textos em `src/pages/legal`, com os dados da empresa vindos de `LEGAL_COMPANY_NAME`, `LEGAL_CNPJ`, `LEGAL_ADDRESS`, `LEGAL_CONTACT_EMAIL` e `LEGAL_DPO_NAME`. **Os textos são uma minuta: revise com um advogado antes de vender.**
+- **Aceite**: todo usuário de cliente aceita a versão vigente no primeiro acesso (até lá a API responde `403 LEGAL_ACCEPTANCE_REQUIRED`). Cada aceite fica registrado com data, IP e navegador (`legal_acceptances`). Ao alterar os textos, mude `LEGAL_VERSION` em `server/utils/legal.js`: todos aceitam de novo.
+- **Exportação**: o Administrador baixa todos os dados da empresa em planilha (.xlsx) em **Configurações → Empresa** (portabilidade). A exportação fica no log de auditoria.
+- **Exclusão após o cancelamento**: os Termos prometem excluir os dados até 90 dias após o cancelamento (ou antes, a pedido). Faça isso em **Backoffice → Clientes → Excluir** (apenas o Root).
+
 ## 🧾 NFS-e (Emissor Nacional)
 
 A emissão segue o padrão nacional (Sefin Nacional). O ambiente já está preparado:
