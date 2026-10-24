@@ -59,3 +59,25 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: docker build -t smartmaint:ci .
+
+  infra:
+    name: Infraestrutura (Terraform)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.13"
+      - run: terraform fmt -check -recursive infra
+      - name: Validar ambientes
+        run: |
+          for dir in infra/bootstrap infra/envs/staging infra/envs/production; do
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+          done
+      # Plano completo do módulo com provedores simulados (não usa conta AWS)
+      - name: Testar módulo
+        working-directory: infra/modules/smartmaint
+        run: |
+          terraform init -backend=false -input=false
+          terraform test

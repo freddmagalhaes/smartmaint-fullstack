@@ -1,0 +1,6 @@
+# Copie para backend.hcl e use: terraform init -backend-config=backend.hcl
+bucket       = "smartmaint-tfstate-<ID-DA-CONTA>"
+key          = "smartmaint/staging.tfstate"
+region       = "sa-east-1"
+encrypt      = true
+use_lockfile = true # trava nativa do S3: impede dois "apply" ao mesmo tempo

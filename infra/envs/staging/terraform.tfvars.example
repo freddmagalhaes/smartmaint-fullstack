@@ -1,0 +1,8 @@
+# Copie para terraform.tfvars e preencha
+domain_name              = "homolog.smartmaint.com.br"
+route53_zone_id          = "Z0123456789ABCDEFGHIJ"
+email_domain             = "homolog.smartmaint.com.br"
+email_from               = "no-reply@homolog.smartmaint.com.br"
+alert_emails             = ["voce@suaempresa.com.br"]
+github_oidc_provider_arn = "arn:aws:iam::<ID-DA-CONTA>:oidc-provider/token.actions.githubusercontent.com"
+monthly_budget_usd       = 150

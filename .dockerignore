@@ -16,3 +16,6 @@ build
 **/uploads
 server/tests
 *.md
+
+# Infraestrutura (Terraform) não faz parte da imagem
+infra

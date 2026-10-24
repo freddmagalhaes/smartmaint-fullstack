@@ -120,7 +120,11 @@ docker build -t smartmaint .
 docker run -p 3001:3001 --env-file server/.env smartmaint
 ```
 
-Recomendações para produção:
+A infraestrutura completa (rede, ECS Fargate, RDS, S3, SES, WAF, alarmes) está em Terraform na pasta
+[`infra/`](infra/README.md), com deploy automático pelo GitHub Actions (`.github/workflows/deploy.yml`).
+O passo a passo para criar o ambiente está em [`infra/README.md`](infra/README.md).
+
+Recomendações para produção (já aplicadas pelo Terraform):
 
 - **Banco:** RDS MySQL 8 com backup automático (retenção mínima de 7 dias) e `DB_SSL=rds` (conexão criptografada).
 - **Arquivos:** defina `S3_BUCKET` (o disco do container é perdido a cada deploy). A role da aplicação precisa de `s3:PutObject` e `s3:GetObject`.

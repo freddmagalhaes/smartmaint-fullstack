@@ -1,0 +1,8 @@
+# Estado e variáveis locais do Terraform (o estado fica no S3)
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+terraform.tfvars
+backend.hcl
+*.tfplan
