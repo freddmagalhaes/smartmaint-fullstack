@@ -40,10 +40,16 @@ const config = {
     secretKey: process.env.STRIPE_SECRET_KEY,
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
     paymentMethods: list(process.env.STRIPE_PAYMENT_METHODS || 'card,boleto'),
+    // Assinatura com Pix Automático: ligue só depois de o Stripe confirmar que a sua conta tem o recurso
+    pixAutomatico: process.env.STRIPE_PIX_AUTOMATICO === 'true',
   },
   billing: {
     autoBlock: process.env.BILLING_AUTO_BLOCK !== 'false',
     graceDays: Number(process.env.BILLING_GRACE_DAYS) || 10,
+    // Boleto e Pix: a fatura do mês é gerada BILLING_INVOICE_LEAD_DAYS antes do vencimento
+    invoiceLeadDays: Number(process.env.BILLING_INVOICE_LEAD_DAYS) || 10,
+    // Prazo de pagamento da primeira fatura, gerada ao assinar
+    firstInvoiceDueDays: Number(process.env.BILLING_FIRST_INVOICE_DUE_DAYS) || 3,
   },
   nfse: {
     // NFS-e padrão nacional (Sefin Nacional). Desativada até o certificado e os dados fiscais existirem.

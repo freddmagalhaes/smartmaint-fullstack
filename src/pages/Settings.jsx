@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import UnitsTab from './settings/UnitsTab';
 import AuditTab from './settings/AuditTab';
+import BillingTab from './settings/BillingTab';
 import { useAuth, ROLES } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { apiFetch, withQuery } from '../api/client';
@@ -57,15 +58,12 @@ const Settings = () => {
   );
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
-  const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
-  const [invoices, setInvoices] = useState([]);
 
   // Dados do contrato do tenant ativo
   const currentTenant = tenants.find(t => t.id === activeTenant) || null;
 
   const [userFormData, setUserFormData] = useState(EMPTY_USER);
   const [companyForm, setCompanyForm] = useState({ name: '', cnpj: '' });
-  const [usage, setUsage] = useState(null);
   const [profileName, setProfileName] = useState(user?.name || '');
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [saving, setSaving] = useState(null);
@@ -74,22 +72,6 @@ const Settings = () => {
     if (!currentTenant) return;
     setCompanyForm(Object.fromEntries(COMPANY_FIELDS.map((f) => [f, currentTenant[f] || ''])));
   }, [currentTenant]);
-
-  // Retorno do Checkout do Stripe
-  useEffect(() => {
-    if (searchParams.get('success')) toast.success('Pagamento recebido! A baixa da fatura pode levar alguns minutos (boleto: até 3 dias úteis).');
-    if (searchParams.get('canceled')) toast.info('Pagamento cancelado.');
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (activeTab !== 'billing' || !activeTenant) return;
-    apiFetch(withQuery('/api/billing/invoices', { tenant_id: activeTenant }))
-      .then(setInvoices)
-      .catch((err) => toast.error(err.message));
-    apiFetch(withQuery('/api/billing/usage', { tenant_id: activeTenant }))
-      .then(setUsage)
-      .catch(() => setUsage(null));
-  }, [activeTab, activeTenant]);
 
   const handleOpenAddUser = () => {
     setEditingUserId(null);
@@ -159,19 +141,6 @@ const Settings = () => {
     }, 'Senha alterada! Outras sessões abertas foram encerradas.');
     if (ok) setPasswordForm({ currentPassword: '', newPassword: '', confirm: '' });
   };
-
-  const handleCheckout = async () => {
-    setIsCheckoutLoading(true);
-    try {
-      const data = await apiFetch(withQuery('/api/billing/checkout', { tenant_id: activeTenant }), { method: 'POST', body: {} });
-      window.location.href = data.url;
-    } catch (err) {
-      toast.error(err.message);
-      setIsCheckoutLoading(false);
-    }
-  };
-
-  const hasOpenInvoice = invoices.some((i) => i.status !== 'Paga');
 
   return (
     <div className="fade-in">
@@ -441,79 +410,7 @@ const Settings = () => {
 
           {activeTab === 'audit' && <AuditTab />}
 
-          {activeTab === 'billing' && (
-            <div className="fade-in">
-              <SectionHeader 
-                title="Plano e Faturamento" 
-                description="Gerencie sua assinatura do SmartMaint e histórico de pagamentos." 
-              />
-              <div style={styles.billingCard}>
-                <div style={styles.billingHeader}>
-                  <div>
-                    <h4 style={styles.planTitle}>Plano {usage?.plan?.name || currentTenant?.plan_type || 'Pro'}</h4>
-                    <p style={styles.planDesc}>Acesso completo ao SmartMaint</p>
-                  </div>
-                  <div style={styles.planStatus}>{currentTenant?.status || 'Ativo'}</div>
-                </div>
-                {usage && (
-                  <div style={styles.usageGrid}>
-                    {[['users', 'Usuários'], ['equipments', 'Equipamentos'], ['units', 'Unidades']].map(([key, label]) => {
-                      const { used, limit } = usage.usage[key];
-                      const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-                      return (
-                        <div key={key}>
-                          <p style={styles.usageLabel}>{label}: <strong>{used}</strong>{limit !== null ? ` de ${limit}` : ' (ilimitado)'}</p>
-                          {limit !== null && (
-                            <div style={styles.usageBar} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
-                              <div style={{ ...styles.usageFill, width: `${pct}%`, background: pct >= 90 ? 'var(--danger)' : 'var(--primary)' }} />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                <button
-                  className="btn-primary"
-                  onClick={handleCheckout}
-                  disabled={isCheckoutLoading || !hasOpenInvoice}
-                  style={{ width: '100%', justifyContent: 'center' }}
-                >
-                  {isCheckoutLoading ? 'Gerando Pagamento...' : hasOpenInvoice ? 'Pagar Fatura em Aberto' : 'Nenhuma fatura em aberto'}
-                </button>
-              </div>
-
-              <div style={{ marginTop: '32px' }}>
-                <h4 style={{ ...styles.planTitle, marginBottom: '12px' }}>Histórico de Faturas</h4>
-                {invoices.length === 0 ? (
-                  <p style={{ fontSize: '14px', color: 'var(--text-muted)' }}>Nenhuma fatura emitida.</p>
-                ) : (
-                  <div className="table-wrap">
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                      <thead>
-                        <tr style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase' }}>
-                          <th style={styles.th}>Referência</th>
-                          <th style={styles.th}>Vencimento</th>
-                          <th style={styles.th}>Valor</th>
-                          <th style={styles.th}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {invoices.map((inv) => (
-                          <tr key={inv.id} style={{ borderTop: '1px solid var(--border)' }}>
-                            <td style={styles.td}>{inv.mes_ref}</td>
-                            <td style={styles.td}>{formatDate(inv.vencimento)}</td>
-                            <td style={styles.td}>{formatCurrency(inv.valor)}</td>
-                            <td style={{ ...styles.td, fontWeight: 700, color: inv.status === 'Paga' ? 'var(--success)' : inv.status === 'Atrasada' ? 'var(--danger)' : 'var(--warning)' }}>{inv.status}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+          {activeTab === 'billing' && <BillingTab />}
         </div>
       </div>
 
@@ -613,17 +510,6 @@ const styles = {
   roleBadge: { display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' },
   actionBtn: { color: 'var(--text-muted)', background: 'transparent', cursor: 'pointer', padding: '8px' },
   deleteBtn: { color: '#94a3b8', background: 'transparent', cursor: 'pointer', padding: '8px' },
-  billingCard: { background: '#f8fafc', borderRadius: '16px', padding: '24px', border: '1px solid var(--border)' },
-  billingHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' },
-  planTitle: { fontSize: '16px', fontWeight: '700', color: 'var(--text-main)' },
-  planDesc: { fontSize: '13px', color: 'var(--text-muted)' },
-  planStatus: { background: 'var(--success)', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '700' },
-  usageGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: '16px', marginBottom: '24px' },
-  usageLabel: { fontSize: '13px', color: 'var(--text-muted)', marginBottom: '6px' },
-  usageBar: { height: '6px', borderRadius: '3px', background: 'var(--border)', overflow: 'hidden' },
-  usageFill: { height: '100%', borderRadius: '3px' },
-  th: { padding: '10px 12px', fontWeight: 600 },
-  td: { padding: '12px' },
   modal: { width: '100%', maxWidth: '500px', padding: '32px', background: 'white' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' },
   modalTitle: { fontSize: '20px', fontWeight: '700' },

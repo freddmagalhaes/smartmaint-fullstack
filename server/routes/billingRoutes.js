@@ -1,8 +1,11 @@
 const express = require('express');
 const { query, assertAffected } = require('../utils/routeHelpers');
 const { HttpError } = require('../utils/errorHandler');
+const db = require('../db');
+const logger = require('../utils/logger');
 const { stripe, createCheckoutSession, constructWebhookEvent } = require('../utils/stripe');
 const { markInvoicePaid } = require('../utils/billing');
+const subscriptions = require('../utils/subscriptions');
 const { ROLES, requireRole, requireBackoffice, tenantScope } = require('../middleware/rbac');
 const { parse, z, id, date, text, idParam } = require('../utils/validate');
 const { config } = require('../config');
@@ -57,7 +60,41 @@ router.put('/admin/invoices/:id/status', requireBackoffice, async (req, res) => 
 
 // --- CLIENTE: FATURAS E PAGAMENTO ---
 router.get('/billing/invoices', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
-  res.json(await query('SELECT id, valor, vencimento, status, mes_ref, paid_at FROM invoices WHERE tenant_id = ? ORDER BY vencimento DESC', [req.tenantId]));
+  res.json(await query(
+    'SELECT id, valor, vencimento, status, mes_ref, paid_at, payment_method, payment_url FROM invoices WHERE tenant_id = ? ORDER BY vencimento DESC, id DESC',
+    [req.tenantId]
+  ));
+});
+
+// --- CLIENTE: ASSINATURA ---
+const METHODS = ['card', 'boleto', 'pix', 'pix_automatico'];
+
+router.get('/billing/subscription', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
+  res.json(await subscriptions.getSubscription(req.tenantId));
+});
+
+router.post('/billing/subscription', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
+  const d = parse(z.object({ method: z.enum(METHODS), plan_id: z.string().min(1).max(50).optional() }), req.body);
+  const result = await subscriptions.startSubscription(req.tenantId, { method: d.method, planId: d.plan_id });
+  await audit(req, { action: 'subscribe', entity: 'subscription', entityId: req.tenantId, changes: d });
+  res.status(201).json(result);
+});
+
+router.put('/billing/subscription/plan', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
+  const { plan_id: planId } = parse(z.object({ plan_id: z.string().min(1).max(50) }), req.body);
+  const result = await subscriptions.changePlan(req.tenantId, planId);
+  await audit(req, { action: 'change_plan', entity: 'subscription', entityId: req.tenantId, changes: { plan_id: planId } });
+  res.json(result);
+});
+
+router.post('/billing/subscription/cancel', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
+  const result = await subscriptions.cancelSubscription(req.tenantId);
+  await audit(req, { action: 'cancel', entity: 'subscription', entityId: req.tenantId });
+  res.json(result);
+});
+
+router.post('/billing/portal', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
+  res.json(await subscriptions.createPortalSession(req.tenantId));
 });
 
 router.post('/billing/checkout', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
@@ -70,8 +107,16 @@ router.post('/billing/checkout', requireRole(ROLES.ADMIN), tenantScope, async (r
     : await query("SELECT * FROM invoices WHERE tenant_id = ? AND status <> 'Paga' ORDER BY vencimento ASC LIMIT 1", [req.tenantId]);
   if (invoices.length === 0) throw new HttpError(400, 'Nenhuma fatura pendente encontrada.');
 
-  const session = await createCheckoutSession(tenant, invoices[0]);
-  await query('UPDATE invoices SET stripe_session_id = ? WHERE id = ?', [session.id, invoices[0].id]);
+  const invoice = invoices[0];
+  // Cobrança da assinatura no cartão: paga na página da própria fatura do Stripe
+  if (invoice.stripe_invoice_id) {
+    if (!invoice.payment_url) throw new HttpError(400, 'Atualize o cartão em "Gerenciar pagamento" para quitar esta fatura.');
+    return res.json({ url: invoice.payment_url });
+  }
+  // Fatura de boleto/Pix: o Checkout oferece só o meio escolhido na assinatura
+  const methods = ['boleto', 'pix'].includes(invoice.payment_method) ? [invoice.payment_method] : config.stripe.paymentMethods;
+  const session = await createCheckoutSession(tenant, invoice, methods);
+  await query('UPDATE invoices SET stripe_session_id = ? WHERE id = ?', [session.id, invoice.id]);
   res.json({ url: session.url });
 });
 
@@ -88,12 +133,16 @@ webhookRouter.post('/billing/webhook', express.raw({ type: 'application/json' })
     return res.status(400).json({ error: `Assinatura inválida: ${err.message}` });
   }
 
-  const session = event.data.object;
-  const paid = (event.type === 'checkout.session.completed' && session.payment_status === 'paid')
-    || event.type === 'checkout.session.async_payment_succeeded'; // boleto compensado
-  if (paid) {
-    const invoiceId = Number(session.metadata?.invoice_id || session.client_reference_id);
-    if (invoiceId) await markInvoicePaid(invoiceId, session.id);
+  // O Stripe pode reenviar o mesmo evento: cada um é processado uma única vez
+  const [claim] = await db.query('INSERT IGNORE INTO stripe_events (id, type) VALUES (?, ?)', [event.id, event.type]);
+  if (claim.affectedRows === 0) return res.json({ received: true, duplicate: true });
+  try {
+    await subscriptions.handleStripeEvent(event);
+  } catch (err) {
+    // Libera o evento para o Stripe tentar de novo
+    await db.query('DELETE FROM stripe_events WHERE id = ?', [event.id]).catch(() => {});
+    logger.error({ err, eventId: event.id, type: event.type }, 'falha ao processar evento do Stripe');
+    return res.status(500).json({ error: 'Falha ao processar o evento' });
   }
   res.json({ received: true });
 });
