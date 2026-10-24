@@ -2,6 +2,7 @@ const db = require('../db');
 const { config } = require('../config');
 const logger = require('./logger');
 const { enqueueForInvoice } = require('./nfse');
+const notifications = require('./notifications');
 
 /**
  * Marca a fatura como paga e, se o cliente estava bloqueado por inadimplência e não
@@ -25,8 +26,19 @@ const markInvoicePaid = async (invoiceId, sessionId) => db.transaction(async (q)
  * acima da carência (BILLING_GRACE_DAYS) são bloqueados como "Inadimplente".
  * As atualizações são idempotentes, então rodar em várias instâncias não causa problema.
  */
+const REMINDER_DAYS = 5;
+
 const runBillingCycle = async () => {
+  // Lembrete antes do vencimento e aviso de atraso (uma vez por fatura, ver notifications_sent)
+  const [dueSoon] = await db.query(
+    "SELECT * FROM invoices WHERE status = 'Pendente' AND vencimento BETWEEN CURRENT_DATE AND DATE_ADD(CURRENT_DATE, INTERVAL ? DAY)",
+    [REMINDER_DAYS]
+  );
+  const [becomingLate] = await db.query("SELECT * FROM invoices WHERE status = 'Pendente' AND vencimento < CURRENT_DATE");
+
   const [late] = await db.query("UPDATE invoices SET status = 'Atrasada' WHERE status = 'Pendente' AND vencimento < CURRENT_DATE");
+  for (const invoice of dueSoon) await notifications.invoiceReminder(invoice.tenant_id, invoice, 'due');
+  for (const invoice of becomingLate) await notifications.invoiceReminder(invoice.tenant_id, invoice, 'late');
   const [blocked] = await db.query(
     `UPDATE tenants t SET t.status = 'Inadimplente'
      WHERE t.status = 'Ativo' AND EXISTS (

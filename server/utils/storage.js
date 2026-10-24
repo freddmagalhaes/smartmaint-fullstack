@@ -53,4 +53,14 @@ const read = async (key) => {
   return fs.createReadStream(full);
 };
 
-module.exports = { save, read };
+/** Remove o arquivo (ignora se já não existir). */
+const remove = async (key) => {
+  if (config.uploads.s3Bucket) {
+    const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+    await getS3().send(new DeleteObjectCommand({ Bucket: config.uploads.s3Bucket, Key: key }));
+    return;
+  }
+  await fs.promises.unlink(localPath(key)).catch((err) => { if (err.code !== 'ENOENT') throw err; });
+};
+
+module.exports = { save, read, remove };

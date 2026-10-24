@@ -16,18 +16,26 @@ const MIME_BY_EXT = Object.fromEntries(FILE_TYPES.map((t) => [t.ext, t.mime]));
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
 
+/**
+ * Valida o arquivo pelo conteúdo e grava na pasta do cliente com nome aleatório.
+ * Retorna { url, contentType, size }. Usado no upload avulso e nos anexos de O.S.
+ */
+const saveUploadedFile = async (file, tenantId) => {
+  if (!file) throw new HttpError(400, 'Nenhum arquivo enviado');
+  const type = FILE_TYPES.find((t) => t.test(file.buffer));
+  if (!type) throw new HttpError(400, 'Tipo de arquivo não permitido. Envie PNG, JPG, WEBP ou PDF.');
+  // Nome aleatório (UUID) torna o endereço impossível de adivinhar; a pasta separa os arquivos por cliente
+  const key = `${tenantId}/${crypto.randomUUID()}.${type.ext}`;
+  await storage.save(key, file.buffer, type.mime);
+  return { url: `/uploads/${key}`, contentType: type.mime, size: file.size };
+};
+
 // Rotas autenticadas (montadas em /api)
 const apiRouter = express.Router();
 
 apiRouter.post('/upload', requireRole(...MANAGERS), tenantScope, upload.single('file'), async (req, res) => {
-  if (!req.file) throw new HttpError(400, 'Nenhum arquivo enviado');
-  const type = FILE_TYPES.find((t) => t.test(req.file.buffer));
-  if (!type) throw new HttpError(400, 'Tipo de arquivo não permitido. Envie PNG, JPG, WEBP ou PDF.');
-
-  // Nome aleatório (UUID) torna o endereço impossível de adivinhar; a pasta separa os arquivos por cliente
-  const key = `${req.tenantId}/${crypto.randomUUID()}.${type.ext}`;
-  await storage.save(key, req.file.buffer, type.mime);
-  res.status(201).json({ url: `/uploads/${key}` });
+  const { url } = await saveUploadedFile(req.file, req.tenantId);
+  res.status(201).json({ url });
 });
 
 // Entrega dos arquivos (montada em /uploads, pública para funcionar em <img src>)
@@ -63,4 +71,4 @@ fileRouter.get('/:file', async (req, res) => {
   await sendFile(file, res);
 });
 
-module.exports = { apiRouter, fileRouter };
+module.exports = { apiRouter, fileRouter, upload, saveUploadedFile };

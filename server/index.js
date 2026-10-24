@@ -9,10 +9,12 @@ const app = require('./app');
 const db = require('./db');
 const { runMigrations } = require('./migrations');
 const { startBillingScheduler } = require('./utils/billing');
+const { startPreventiveScheduler } = require('./utils/preventive');
 
 const start = async () => {
   if (process.env.RUN_MIGRATIONS !== 'false') await runMigrations();
   startBillingScheduler();
+  startPreventiveScheduler();
 
   const server = app.listen(config.port, () => {
     logger.info({ port: config.port }, 'Servidor SmartMaint iniciado');
