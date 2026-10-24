@@ -22,6 +22,8 @@ const Inventory = lazy(() => import('./pages/Inventory'));
 const Settings = lazy(() => import('./pages/Settings'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const Backoffice = lazy(() => import('./pages/Backoffice'));
+const EquipmentCard = lazy(() => import('./pages/EquipmentCard'));
+const EquipmentLabels = lazy(() => import('./pages/EquipmentLabels'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Signup = lazy(() => import('./pages/Signup'));
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
@@ -35,6 +37,9 @@ const APP_ROUTES = [
   { path: '/', element: <Dashboard />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   { path: '/work-orders', element: <WorkOrders />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER, USER] },
   { path: '/equipments', element: <Equipments />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
+  { path: '/equipments/labels', element: <EquipmentLabels />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
+  // Ficha aberta pelo QR Code da etiqueta: todos os perfis (o técnico abre a O.S. por ela)
+  { path: '/equipamento/:id', element: <EquipmentCard />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER, USER] },
   { path: '/preventive', element: <PreventiveMaintenance />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   { path: '/inventory', element: <Inventory />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   { path: '/failures', element: <Failures />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAuth, isBackofficeUser } from '../contexts/AuthContext';
 import { homePathFor } from '../components/ProtectedRoute';
 import { apiFetch } from '../api/client';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { usePublicInfo } from '../api/publicInfo';
 import { LogIn, Mail, Lock, Loader2, Info, X } from 'lucide-react';
 import logo from '../assets/logo.png';
@@ -22,6 +22,9 @@ const Login = () => {
   
   const { login } = useAuth();
   const navigate = useNavigate();
+  // Página que pediu login (ex.: ficha aberta pelo QR Code) para voltar a ela depois
+  const location = useLocation();
+  const from = location.state?.from;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -32,7 +35,8 @@ const Login = () => {
     const result = await login(email, password);
     setIsLoading(false);
     if (result.ok) {
-      navigate(homePathFor(result.user, isBackofficeUser(result.user), result.user.tenant_id), { replace: true });
+      const back = from && from.pathname !== '/login' ? `${from.pathname}${from.search || ''}` : null;
+      navigate(back || homePathFor(result.user, isBackofficeUser(result.user), result.user.tenant_id), { replace: true });
     } else {
       setError(result.error);
       setUnverified(result.code === 'EMAIL_NOT_VERIFIED');

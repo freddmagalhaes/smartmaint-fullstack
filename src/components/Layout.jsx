@@ -26,6 +26,9 @@ import logo from '../assets/logo.png';
 import { PageLoader } from './ProtectedRoute';
 import ErrorBoundary from './ErrorBoundary';
 import LegalAcceptance from './LegalAcceptance';
+import OfflineStatus from './OfflineStatus';
+import { useConfirm } from './ConfirmDialog';
+import { pendingCount, clearOutbox } from '../api/outbox';
 
 const { ROOT, BACKOFFICE, ADMIN, MANAGER, USER } = ROLES;
 
@@ -56,7 +59,11 @@ const Layout = ({ children }) => {
   const isPending = !isBackoffice && user?.tenant_status === 'Pendente';
   const legalPending = !isBackoffice && user?.legal_pending;
 
-  const handleLogout = () => {
+  const confirm = useConfirm();
+  const handleLogout = async () => {
+    const pending = pendingCount();
+    if (pending && !(await confirm(`Há ${pending} ação(ões) feita(s) sem internet que ainda não foram enviadas. Se sair agora, elas serão descartadas. Sair mesmo assim?`))) return;
+    clearOutbox();
     logout();
     navigate('/login');
   };
@@ -118,6 +125,7 @@ const Layout = ({ children }) => {
       </aside>
 
       <main className="app-main">
+        <OfflineStatus />
         {/* Banner de acesso do backoffice aos dados de um cliente */}
         {isBackoffice && activeTenant && (
           <div className="app-impersonation">

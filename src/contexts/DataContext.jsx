@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useMemo } 
 import { useAuth } from './AuthContext';
 import { useConfirm } from '../components/ConfirmDialog';
 import { apiFetch, withQuery } from '../api/client';
+import { enqueue } from '../api/outbox';
 import { toast } from 'sonner';
 
 const DataContext = createContext();
@@ -78,6 +79,11 @@ export const DataProvider = ({ children }) => {
       setDataVersion((v) => v + 1);
       return result ?? {};
     } catch (error) {
+      // Sem internet: O.S., comentários e mudanças de status esperam no aparelho e são enviados depois
+      if (error.status === 0 && !(body instanceof FormData) && enqueue({ method, path: url(path), body })) {
+        toast.info('Sem conexão: salvo neste aparelho. Será enviado automaticamente quando a internet voltar.');
+        return { queued: true };
+      }
       toast.error(error.message);
       return null;
     }

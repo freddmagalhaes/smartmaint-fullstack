@@ -27,7 +27,8 @@ const Privacy = () => (
         </ul>
         <p>
           Não usamos cookies de publicidade nem ferramentas de rastreamento. O navegador guarda apenas o necessário para
-          manter a sessão aberta e preferências da tela (armazenamento local).
+          manter a sessão aberta e preferências da tela (armazenamento local) e, para o uso sem internet, uma cópia das
+          últimas telas operacionais consultadas e das ações feitas sem conexão até serem enviadas. Essa cópia é apagada ao sair do sistema.
         </p>
 
         <h2>3. Para que usamos e com qual base legal</h2>

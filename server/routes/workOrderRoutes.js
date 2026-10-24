@@ -106,16 +106,34 @@ router.get('/work-orders/:id', requireRole(...TENANT_ROLES), tenantScope, async 
 
 // --- CRIAÇÃO, ALTERAÇÃO E EXCLUSÃO ---
 router.post('/work-orders', requireRole(...TENANT_ROLES), tenantScope, async (req, res) => {
-  const d = parse(workOrderSchema, req.body);
+  const { client_ref: clientRef, ...d } = parse(workOrderSchema.extend({
+    // Gerado no aparelho para O.S. abertas sem internet: reenvio não duplica a O.S.
+    client_ref: z.string().regex(/^[A-Za-z0-9-]{8,40}$/, 'identificador inválido').optional(),
+  }), req.body);
   await assertEquipmentInTenant(d.equipment_id, req.tenantId);
   // Usuário operacional apenas abre chamados; status inicial é sempre "Aberta"
   if (!isBackoffice(req.user) && req.user.role === ROLES.USER) d.status = 'Aberta';
   if (d.status === DONE) throw new HttpError(400, 'Abra a O.S. e conclua-a informando o tempo de reparo');
 
-  const result = await query(
-    'INSERT INTO work_orders (tenant_id, equipment_id, titulo, descricao, tipo, prioridade, status, responsavel, data_criacao) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [req.tenantId, d.equipment_id, d.titulo, d.descricao ?? null, d.tipo, d.prioridade, d.status, d.responsavel ?? null, d.data_criacao || today()]
-  );
+  const existing = async () => {
+    if (!clientRef) return null;
+    const [row] = await query('SELECT * FROM work_orders WHERE tenant_id = ? AND client_ref = ?', [req.tenantId, clientRef]);
+    return row || null;
+  };
+  const already = await existing();
+  if (already) return res.status(200).json({ ...already, duplicate: true });
+
+  let result;
+  try {
+    result = await query(
+      'INSERT INTO work_orders (tenant_id, equipment_id, titulo, descricao, tipo, prioridade, status, responsavel, data_criacao, client_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [req.tenantId, d.equipment_id, d.titulo, d.descricao ?? null, d.tipo, d.prioridade, d.status, d.responsavel ?? null, d.data_criacao || today(), clientRef ?? null]
+    );
+  } catch (err) {
+    // Dois envios simultâneos do mesmo aparelho: devolve a O.S. que entrou primeiro
+    if (err.code === 'ER_DUP_ENTRY' && clientRef) return res.status(200).json({ ...(await existing()), duplicate: true });
+    throw err;
+  }
   await audit(req, { action: 'create', entity: 'work_order', entityId: result.insertId, changes: d });
   if (d.prioridade === 'Crítica') {
     const [eq] = await query('SELECT name FROM equipments WHERE id = ?', [d.equipment_id]);
