@@ -66,7 +66,10 @@ router.post('/billing/checkout', async (req, res) => {
     const invoice = invoices[0];
     const url = await createCheckoutSession(tenant, invoice);
     res.json({ url });
-  } catch (err) { handleQueryError(res, err, 'Falha ao processar checkout'); }
+  } catch (err) {
+    if (err.statusCode === 503) return res.status(503).json({ error: err.message });
+    handleQueryError(res, err, 'Falha ao processar checkout');
+  }
 });
 
 module.exports = router;

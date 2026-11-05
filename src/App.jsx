@@ -2,9 +2,13 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, ROLES } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
+import { PlanProvider } from './contexts/PlanContext';
+import FeatureGate from './components/FeatureGate';
 import { Toaster } from 'sonner';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
+import Signup from './pages/Signup';
+import AssetPage from './pages/AssetPage';
 import Dashboard from './pages/Dashboard';
 import Equipments from './pages/Equipments';
 import Failures from './pages/Failures';
@@ -22,11 +26,23 @@ import Backoffice from './pages/Backoffice';
 function App() {
   return (
     <AuthProvider>
+      <PlanProvider>
       <DataProvider>
         <Router>
           <Toaster position="top-right" richColors />
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+
+            {/* Ficha do equipamento (destino do QR code) - todos os perfis, sem menu lateral (uso em celular) */}
+            <Route
+              path="/ativo/:id"
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER, ROLES.USER]}>
+                  <AssetPage />
+                </ProtectedRoute>
+              }
+            />
             <Route path="/reset-password" element={<ResetPassword />} />
             
             {/* Dashboard - Root, Backoffice, Admin, Gerente */}
@@ -94,7 +110,7 @@ function App() {
               path="/fmea" 
               element={
                 <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN]}>
-                  <Layout><FMEA /></Layout>
+                  <Layout><FeatureGate feature="fmea"><FMEA /></FeatureGate></Layout>
                 </ProtectedRoute>
               } 
             />
@@ -104,7 +120,7 @@ function App() {
               path="/simulator" 
               element={
                 <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]}>
-                  <Layout><Simulator /></Layout>
+                  <Layout><FeatureGate feature="simulator"><Simulator /></FeatureGate></Layout>
                 </ProtectedRoute>
               } 
             />
@@ -134,6 +150,7 @@ function App() {
           </Routes>
         </Router>
       </DataProvider>
+      </PlanProvider>
     </AuthProvider>
   );
 }

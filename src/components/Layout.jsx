@@ -17,15 +17,24 @@ import {
   ClipboardList,
   ArrowLeft,
   Package,
-  CalendarCheck
+  CalendarCheck,
+  Lock,
+  Download
 } from 'lucide-react';
 import logo from '../assets/logo.png';
+import TrialBanner from './TrialBanner';
+import { usePlan, hasFeature } from '../contexts/PlanContext';
+import OfflineBanner from './OfflineBanner';
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
 
 const Layout = ({ children }) => {
-  const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+  // Em telas estreitas (celular) o menu começa recolhido para sobrar espaço ao conteúdo
+  const [isSidebarOpen, setIsSidebarOpen] = React.useState(() => window.innerWidth >= 768);
+  const { canInstall, install } = useInstallPrompt();
   const { user, logout, hasRole, activeTenant, tenants, switchTenant } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const plan = usePlan();
 
   const handleLogout = () => {
     logout();
@@ -37,8 +46,8 @@ const Layout = ({ children }) => {
     { label: 'Ordens de Serviço', path: '/work-orders', icon: ClipboardList, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER, ROLES.USER] },
     { label: 'Equipamentos', path: '/equipments', icon: Cpu, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER] },
     { label: 'Falhas & Reparos', path: '/failures', icon: AlertTriangle, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER] },
-    { label: 'Análise FMEA', path: '/fmea', icon: Activity, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN] },
-    { label: 'Simulador R(t)', path: '/simulator', icon: Calculator, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER] },
+    { label: 'Análise FMEA', path: '/fmea', feature: 'fmea', icon: Activity, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN] },
+    { label: 'Simulador R(t)', path: '/simulator', feature: 'simulator', icon: Calculator, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER] },
     { label: 'Planos Preventivos', path: '/preventive', icon: CalendarCheck, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER] },
     { label: 'Gestão de Estoque', path: '/inventory', icon: Package, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER] },
     { label: 'Configurações', path: '/settings', icon: Settings, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN] },
@@ -79,6 +88,9 @@ const Layout = ({ children }) => {
                   color: isActive ? 'white' : '#94a3b8',
                   fontWeight: isActive ? '600' : '400',
                 }}>{item.label}</span>}
+                {item.feature && !hasFeature(plan, item.feature) && (
+                  <Lock size={14} color="#94a3b8" style={{ marginLeft: 'auto' }} aria-label="Fora do seu plano" />
+                )}
               </Link>
             );
           })}
@@ -102,6 +114,15 @@ const Layout = ({ children }) => {
         </nav>
 
         <div style={styles.sidebarFooter}>
+          {canInstall && (
+            <button onClick={install} style={{
+              ...styles.navItem,
+              justifyContent: isSidebarOpen ? 'flex-start' : 'center',
+            }}>
+              <Download size={20} color="#94a3b8" />
+              {isSidebarOpen && <span style={{...styles.navLabel, color: '#94a3b8'}}>Instalar aplicativo</span>}
+            </button>
+          )}
           <button onClick={handleLogout} style={{
             ...styles.navItem,
             marginTop: 'auto',
@@ -167,7 +188,9 @@ const Layout = ({ children }) => {
           </div>
         </header>
 
+        <OfflineBanner />
         <div style={styles.content}>
+          <TrialBanner />
           {children}
         </div>
       </main>

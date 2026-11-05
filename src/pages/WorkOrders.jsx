@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Plus, Search, 
   AlertCircle, Printer,
@@ -8,6 +9,7 @@ import { useData } from '../contexts/DataContext';
 
 const WorkOrders = () => {
   const { equipments, workOrders, users, addWorkOrder, updateWorkOrder, deleteWorkOrder } = useData();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -41,6 +43,20 @@ const WorkOrders = () => {
       default: return '#10b981';
     }
   };
+
+  // Vindo do QR code (/work-orders?equipment=ID&new=1): abre a nova O.S. com o equipamento escolhido
+  useEffect(() => {
+    if (searchParams.get('new') !== '1' || equipments.length === 0) return;
+    const alvo = equipments.find((e) => String(e.id) === searchParams.get('equipment'));
+    setEditingId(null);
+    setFormData({
+      equipment_id: (alvo || equipments[0]).id,
+      titulo: '', tipo: 'Corretiva', prioridade: 'Média',
+      status: 'Aberta', responsavel: users[0]?.name || ''
+    });
+    setIsModalOpen(true);
+    setSearchParams({}, { replace: true });
+  }, [searchParams, equipments, users, setSearchParams]);
 
   const handleOpenAdd = () => {
     setEditingId(null);

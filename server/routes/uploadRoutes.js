@@ -21,8 +21,12 @@ const storage = multer.diskStorage({
 const fileFilter = (req, file, cb) => {
   const allowedExtensions = ['.png', '.jpg', '.jpeg', '.pdf', '.doc', '.docx'];
   const ext = path.extname(file.originalname).toLowerCase();
-  
-  if (allowedExtensions.includes(ext)) {
+  const allowedMimes = [
+    'image/png', 'image/jpeg', 'application/pdf', 'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ];
+
+  if (allowedExtensions.includes(ext) && allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
     cb(new Error('Extensão de arquivo não permitida. Apenas imagens e documentos são aceitos.'));

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { 
   Building2, Users, UserCircle, Shield, 
   CreditCard, Save, Plus, Trash2, Edit2,
@@ -6,6 +7,10 @@ import {
 } from 'lucide-react';
 import { useAuth, ROLES } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
+import TempPasswordModal from '../components/TempPasswordModal';
+import PlanUsage from '../components/PlanUsage';
+import SubscriptionPanel from '../components/SubscriptionPanel';
+import { useSearchParams } from 'react-router-dom';
 
 const Settings = () => {
   const { user, activeTenant, tenants, hasRole } = useAuth();
@@ -18,10 +23,21 @@ const Settings = () => {
   // Dados do contrato do tenant ativo
   const currentTenant = Array.isArray(tenants) ? tenants.find(t => t.id === activeTenant) : null;
   
+  const [tempCredential, setTempCredential] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Retorno do checkout do Stripe (?billing=success|canceled)
+  useEffect(() => {
+    const result = searchParams.get('billing');
+    if (!result) return;
+    if (result === 'success') toast.success('Pagamento recebido! Sua assinatura será ativada em instantes.');
+    else toast.info('Assinatura não concluída. Você pode tentar de novo quando quiser.');
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [userFormData, setUserFormData] = useState({
     name: '',
     email: '',
-    role: 'USUARIO'
+    role: 'Usuário'
   });
 
   const tabs = [
@@ -33,7 +49,7 @@ const Settings = () => {
 
   const handleOpenAddUser = () => {
     setEditingUserId(null);
-    setUserFormData({ name: '', email: '', role: 'USUARIO' });
+    setUserFormData({ name: '', email: '', role: 'Usuário' });
     setIsUserModalOpen(true);
   };
 
@@ -43,14 +59,18 @@ const Settings = () => {
     setIsUserModalOpen(true);
   };
 
-  const handleUserSubmit = (e) => {
+  const handleUserSubmit = async (e) => {
     e.preventDefault();
     if (editingUserId) {
       updateUser(editingUserId, userFormData);
-    } else {
-      addUser(userFormData);
+      setIsUserModalOpen(false);
+      return;
     }
+    const created = await addUser(userFormData);
     setIsUserModalOpen(false);
+    if (created?.temp_password) {
+      setTempCredential({ email: created.email, password: created.temp_password });
+    }
   };
 
   const handleCheckout = async () => {
@@ -79,6 +99,7 @@ const Settings = () => {
 
   return (
     <div className="fade-in">
+      <TempPasswordModal credential={tempCredential} onClose={() => setTempCredential(null)} />
       <header style={styles.header}>
         <div>
           <h1 style={styles.pageTitle}>Configurações</h1>
@@ -134,6 +155,11 @@ const Settings = () => {
                 Salvar Alterações
               </button>
 
+              <div style={{ marginTop: '32px' }}>
+                <SubscriptionPanel />
+                <PlanUsage />
+              </div>
+
               {/* Seção: Contrato de Prestação de Serviços */}
               <div style={{ marginTop: '48px' }}>
                 <SectionHeader 
@@ -156,7 +182,7 @@ const Settings = () => {
                           Contrato {currentTenant.status === 'Ativo' ? 'Ativo' : currentTenant.status}
                         </p>
                         <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                          Plano: <strong>{currentTenant.plan_type || 'Pro'}</strong> • Valor mensal: <strong>R$ {parseFloat(currentTenant.valor_mensal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                          Plano: <strong>{currentTenant.plan_type || 'Profissional'}</strong> • Valor mensal: <strong>R$ {parseFloat(currentTenant.valor_mensal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
                         </p>
                       </div>
                       {currentTenant.renovacao_auto ? (
@@ -299,7 +325,7 @@ const Settings = () => {
               <div style={styles.billingCard}>
                 <div style={styles.billingHeader}>
                   <div>
-                    <h4 style={styles.planTitle}>Plano {currentTenant?.plan_type || 'Pro'}</h4>
+                    <h4 style={styles.planTitle}>Plano {currentTenant?.plan_type || 'Profissional'}</h4>
                     <p style={styles.planDesc}>Acesso completo ao SmartMaint</p>
                   </div>
                   <div style={styles.planStatus}>{currentTenant?.status || 'Ativo'}</div>
@@ -369,11 +395,11 @@ const Settings = () => {
                 </div>
                 {!editingUserId && (
                   <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
-                    <label style={styles.label}>Senha de Acesso (Provisória)</label>
+                    <label style={styles.label}>Senha de Acesso (opcional)</label>
                     <input 
                       type="password" 
                       style={styles.input} 
-                      placeholder="Ex: 123456"
+                      placeholder="Deixe em branco para gerar uma senha aleatória"
                       value={userFormData.password || ''}
                       onChange={(e) => setUserFormData({...userFormData, password: e.target.value})}
                     />

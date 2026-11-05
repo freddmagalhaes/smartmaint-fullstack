@@ -1,9 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
-const { query, getTenantId, isBackoffice } = require('../utils/routeHelpers');
+const { query, getTenantId, isBackoffice, generateTempPassword } = require('../utils/routeHelpers');
 const { handleQueryError } = require('../utils/errorHandler');
 const authMiddleware = require('../middleware/auth');
+const { isValidPlan, normalizePlan, DEFAULT_PLAN } = require('../utils/plans');
+const { insertWithinLimit } = require('../utils/planLimits');
 
 router.use(authMiddleware);
 
@@ -27,27 +29,31 @@ router.get('/admin/tenants', async (req, res) => {
 router.post('/admin/tenants', async (req, res) => {
   if (!isBackoffice(req)) return res.status(403).json({ error: 'Proibido' });
   const { id, name, plan_type, contact_email, contact_phone } = req.body;
+  if (plan_type && !isValidPlan(plan_type)) return res.status(400).json({ error: 'Plano inválido' });
   try {
     await query(
       'INSERT INTO tenants (id, name, plan_type, contact_email, contact_phone) VALUES (?, ?, ?, ?, ?)',
-      [id, name, plan_type || 'Pro', contact_email, contact_phone]
+      [id, name, plan_type ? normalizePlan(plan_type) : DEFAULT_PLAN, contact_email, contact_phone]
     );
-    const hashedPassword = await bcrypt.hash('123456', 10);
+    const tempPassword = generateTempPassword();
+    const hashedPassword = await bcrypt.hash(tempPassword, 10);
     await query(
       'INSERT INTO users (tenant_id, name, email, role, password) VALUES (?, ?, ?, ?, ?)',
       [id, `Admin ${name}`, contact_email || `admin@${id}.com`, 'Administrador', hashedPassword]
     );
-    res.json({ message: 'Cliente cadastrado', id });
+    // A senha provisória só é exibida nesta resposta; o cliente pode trocá-la via "esqueci minha senha"
+    res.json({ message: 'Cliente cadastrado', id, temp_password: tempPassword });
   } catch (err) { handleQueryError(res, err, 'Erro ao criar cliente'); }
 });
 
 router.put('/admin/tenants/:id', async (req, res) => {
   if (!isBackoffice(req)) return res.status(403).json({ error: 'Proibido' });
   const { name, plan_type, contact_email, contact_phone } = req.body;
+  if (plan_type && !isValidPlan(plan_type)) return res.status(400).json({ error: 'Plano inválido' });
   try {
     await query(
       'UPDATE tenants SET name=COALESCE(?,name), plan_type=COALESCE(?,plan_type), contact_email=COALESCE(?,contact_email), contact_phone=COALESCE(?,contact_phone) WHERE id=?',
-      [name, plan_type, contact_email, contact_phone, req.params.id]
+      [name, plan_type ? normalizePlan(plan_type) : null, contact_email, contact_phone, req.params.id]
     );
     res.json({ message: 'Cliente atualizado' });
   } catch (err) { handleQueryError(res, err, 'Erro ao atualizar cliente'); }
@@ -72,7 +78,11 @@ router.delete('/admin/tenants/:id', async (req, res) => {
 
 router.put('/admin/tenants/:id/contract', async (req, res) => {
   if (!isBackoffice(req)) return res.status(403).json({ error: 'Proibido' });
-  const { contrato_inicio, contrato_fim, renovacao_auto, valor_mensal, plan_type, status } = req.body;
+  const { contrato_inicio, contrato_fim, renovacao_auto, valor_mensal, plan_type, status, extra_assets, extra_users } = req.body;
+  if (plan_type && !isValidPlan(plan_type)) return res.status(400).json({ error: 'Plano inválido' });
+  const isCount = (v) => v === undefined || v === null || v === '' || (Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 100000);
+  if (!isCount(extra_assets) || !isCount(extra_users)) return res.status(400).json({ error: 'Excedentes devem ser inteiros não negativos' });
+  const toCount = (v) => (v === undefined || v === null || v === '' ? null : Number(v));
   try {
     await query(
       `UPDATE tenants SET 
@@ -81,9 +91,11 @@ router.put('/admin/tenants/:id/contract', async (req, res) => {
         renovacao_auto=COALESCE(?,renovacao_auto), 
         valor_mensal=COALESCE(?,valor_mensal), 
         plan_type=COALESCE(?,plan_type),
-        status=COALESCE(?,status)
+        status=COALESCE(?,status),
+        extra_assets=COALESCE(?,extra_assets),
+        extra_users=COALESCE(?,extra_users)
       WHERE id=?`,
-      [contrato_inicio, contrato_fim, renovacao_auto, valor_mensal, plan_type, status, req.params.id]
+      [contrato_inicio, contrato_fim, renovacao_auto, valor_mensal, plan_type ? normalizePlan(plan_type) : null, status, toCount(extra_assets), toCount(extra_users), req.params.id]
     );
     res.json({ message: 'Contrato atualizado' });
   } catch (err) { handleQueryError(res, err, 'Erro ao atualizar contrato'); }
@@ -101,12 +113,13 @@ router.post('/admin/users', async (req, res) => {
   if (!req.user.is_master) return res.status(403).json({ error: 'Apenas Root pode criar agentes de backoffice' });
   const { name, email, password } = req.body;
   try {
-    const hashedPassword = await bcrypt.hash(password || '123456', 10);
+    const tempPassword = password ? null : generateTempPassword();
+    const hashedPassword = await bcrypt.hash(password || tempPassword, 10);
     const result = await query(
       'INSERT INTO users (tenant_id, name, email, role, password, is_master) VALUES (NULL, ?, ?, "Suporte", ?, FALSE)',
       [name, email, hashedPassword]
     );
-    res.json({ id: result.insertId, name, email, role: 'Suporte' });
+    res.json({ id: result.insertId, name, email, role: 'Suporte', ...(tempPassword && { temp_password: tempPassword }) });
   } catch (err) { handleQueryError(res, err, 'Erro ao criar agente de backoffice'); }
 });
 
@@ -139,12 +152,23 @@ router.post('/users', async (req, res) => {
     if (!allowed.includes(req.user.role) && !req.user.is_master) {
       return res.status(403).json({ error: 'Sem permissão' });
     }
-    const hashedPassword = await bcrypt.hash(password || '123456', 10);
-    const result = await query(
+    if (!tenant_id) return res.status(400).json({ error: 'Tenant ID required' });
+    // Usuários de cliente só podem ter papéis de cliente. "Suporte" é backoffice (acesso a todos os tenants)
+    // e só é criado por /admin/users.
+    const rolesCliente = ['Dono', 'Administrador', 'Usuário'];
+    if (!rolesCliente.includes(role)) {
+      return res.status(400).json({ error: 'Papel inválido' });
+    }
+    const tempPassword = password ? null : generateTempPassword();
+    const hashedPassword = await bcrypt.hash(password || tempPassword, 10);
+    const r = await insertWithinLimit(
+      tenant_id, 'users',
       'INSERT INTO users (tenant_id, name, email, role, password) VALUES (?, ?, ?, ?, ?)',
       [tenant_id, name, email, role, hashedPassword]
     );
-    res.json({ id: result.insertId, name, email, role, tenant_id });
+    if (r.notFound) return res.status(404).json({ error: 'Tenant não encontrado' });
+    if (r.limitReached) return res.status(403).json({ code: 'PLAN_LIMIT_USERS', error: r.message, limit: r.limit });
+    res.json({ id: r.insertId, name, email, role, tenant_id, ...(tempPassword && { temp_password: tempPassword }) });
   } catch (err) { handleQueryError(res, err, 'Erro ao criar usuário'); }
 });
 

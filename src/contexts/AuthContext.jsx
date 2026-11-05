@@ -49,42 +49,52 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, [fetchTenants]);
 
-  const login = async (email, password) => {
+  // Grava a sessão (usuário + token) e carrega os tenants. Usado por login e cadastro.
+  const startSession = async (userData) => {
+    const formattedUser = {
+      ...userData,
+      isMaster: userData.is_master === 1,
+      company: userData.tenant_id ? userData.tenant_id.toUpperCase() : 'SmartMaint'
+    };
+
+    setUser(formattedUser);
+    setToken(userData.token);
+    setActiveTenant(formattedUser.tenant_id || 'delp');
+
+    localStorage.setItem('sm_user', JSON.stringify(formattedUser));
+    localStorage.setItem('sm_tenant', formattedUser.tenant_id || 'delp');
+    localStorage.setItem('sm_token', userData.token);
+
+    await fetchTenants(userData.token);
+    toast.success(`Bem-vindo, ${formattedUser.name}!`);
+  };
+
+  const requestSession = async (url, payload, fallbackError) => {
     try {
-      const res = await fetch('/api/login', {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify(payload)
       });
-
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        const userData = await res.json();
-        const formattedUser = {
-          ...userData,
-          isMaster: userData.is_master === 1,
-          company: userData.tenant_id ? userData.tenant_id.toUpperCase() : 'SmartMaint'
-        };
-        
-        setUser(formattedUser);
-        setToken(userData.token);
-        setActiveTenant(formattedUser.tenant_id || 'delp');
-        
-        localStorage.setItem('sm_user', JSON.stringify(formattedUser));
-        localStorage.setItem('sm_tenant', formattedUser.tenant_id || 'delp');
-        localStorage.setItem('sm_token', userData.token);
-        
-        await fetchTenants(userData.token);
-        toast.success(`Bem-vindo, ${formattedUser.name}!`);
-        return true;
+        await startSession(data);
+        return { ok: true };
       }
-      toast.error('Credenciais inválidas.');
-      return false;
+      if (res.status === 429) {
+        return { ok: false, error: data.error || (typeof data === 'string' ? data : 'Muitas tentativas. Tente novamente mais tarde.') };
+      }
+      return { ok: false, code: data.code, error: data.error || data.message || fallbackError, billingToken: data.billing_token };
     } catch (error) {
       console.error('Erro na autenticação:', error);
-      toast.error('Erro na comunicação com o servidor.');
-      return false;
+      return { ok: false, error: 'Erro na comunicação com o servidor.' };
     }
   };
+
+  // Retorna { ok, error?, code? }: quem chama decide como exibir o erro.
+  const login = (email, password) => requestSession('/api/login', { email, password }, 'Credenciais inválidas.');
+
+  const signup = (payload) => requestSession('/api/signup', payload, 'Não foi possível concluir o cadastro.');
 
   const logout = () => {
     setUser(null);
@@ -116,6 +126,7 @@ export const AuthProvider = ({ children }) => {
       activeTenant, 
       tenants,
       login, 
+      signup,
       logout, 
       hasRole, 
       switchTenant,
