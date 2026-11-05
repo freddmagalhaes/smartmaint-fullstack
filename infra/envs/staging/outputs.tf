@@ -1,0 +1,13 @@
+output "app_url" { value = module.smartmaint.app_url }
+output "ecr_repository_url" { value = module.smartmaint.ecr_repository_url }
+output "ecs_cluster" { value = module.smartmaint.ecs_cluster }
+output "ecs_service" { value = module.smartmaint.ecs_service }
+output "container_name" { value = module.smartmaint.container_name }
+output "deploy_role_arn" { value = module.smartmaint.deploy_role_arn }
+output "app_secret_name" { value = module.smartmaint.app_secret_name }
+output "uploads_bucket" { value = module.smartmaint.uploads_bucket }
+output "db_endpoint" { value = module.smartmaint.db_endpoint }
+output "log_group" { value = module.smartmaint.log_group }
+output "task_family" { value = module.smartmaint.task_family }
+output "private_subnet_ids" { value = module.smartmaint.private_subnet_ids }
+output "app_security_group_id" { value = module.smartmaint.app_security_group_id }

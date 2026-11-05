@@ -7,32 +7,51 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate', // nova versão assume sozinha na próxima abertura
-      includeAssets: ['favicon.svg', 'icons/apple-touch-icon.png'],
+      // A nova versão só entra quando o usuário confirma (aviso "Atualizar" na tela)
+      registerType: 'prompt',
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'SmartMaint - Gestão de Manutenção',
+        name: 'SmartMaint — Gestão de Manutenção',
         short_name: 'SmartMaint',
-        description: 'Ordens de serviço, ativos e manutenção preventiva na palma da mão.',
+        description: 'Ordens de serviço, preventivas, estoque e indicadores de manutenção.',
         lang: 'pt-BR',
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        background_color: '#ffffff',
-        theme_color: '#1e3a8a',
+        orientation: 'any',
+        background_color: '#f8fafc',
+        theme_color: '#172554',
         icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/pwa-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/pwa-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/pwa-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+        shortcuts: [
+          { name: 'Ordens de Serviço', url: '/work-orders', icons: [{ src: '/pwa-192.png', sizes: '192x192' }] },
         ],
       },
       workbox: {
-        // Só o "casco" do app é guardado para abrir offline. A API e os uploads NUNCA passam pelo cache:
-        // dados de manutenção desatualizados seriam pior do que um aviso de "sem conexão".
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // Telas do sistema abrem sem internet (o React Router resolve a rota)
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         cleanupOutdatedCaches: true,
-        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+        runtimeCaching: [
+          {
+            // Dados que o técnico precisa ver sem internet (últimas respostas guardadas no aparelho).
+            // Faturamento, backoffice, auditoria e exportações nunca ficam em cache.
+            // (a função é copiada para o service worker: não pode usar variáveis de fora dela)
+            urlPattern: ({ url, request, sameOrigin }) => sameOrigin && request.method === 'GET'
+              && /^\/api\/(work-orders|equipments|units|users|tenants|inventory|preventive-plans|dashboard\/summary|plans|me)(\/|$)/.test(url.pathname),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'smartmaint-api',
+              networkTimeoutSeconds: 5,
+              expiration: { maxEntries: 300, maxAgeSeconds: 7 * 24 * 60 * 60 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+        ],
       },
     }),
   ],

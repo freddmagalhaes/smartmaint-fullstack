@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Lock, Loader2, Info, ShieldCheck } from 'lucide-react';
+import { apiFetch } from '../api/client';
 
 const ResetPassword = () => {
   const [searchParams] = useSearchParams();
@@ -20,8 +21,8 @@ const ResetPassword = () => {
     if (password !== confirmPassword) {
       return setError('As senhas não coincidem.');
     }
-    if (password.length < 6) {
-      return setError('A senha deve ter no mínimo 6 caracteres.');
+    if (password.length < 8) {
+      return setError('A senha deve ter no mínimo 8 caracteres.');
     }
 
     setError('');
@@ -29,18 +30,8 @@ const ResetPassword = () => {
     setIsLoading(true);
 
     try {
-      const res = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, token, newPassword: password })
-      });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || 'Erro ao redefinir a senha.');
-      }
-
-      setMessage('Senha redefinida com sucesso! Você já pode fazer login.');
+      await apiFetch('/api/auth/reset-password', { method: 'POST', body: { id: Number(id), token, newPassword: password }, auth: false });
+      setMessage('Senha definida com sucesso! Você já pode fazer login.');
       setTimeout(() => navigate('/login'), 3000);
     } catch (err) {
       setError(err.message);
@@ -136,8 +127,9 @@ const ResetPassword = () => {
 
 const styles = {
   container: {
-    height: '100vh',
-    width: '100vw',
+    minHeight: '100dvh',
+    width: '100%',
+    padding: '16px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

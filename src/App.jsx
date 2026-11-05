@@ -1,157 +1,103 @@
-
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider, ROLES } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
-import { PlanProvider } from './contexts/PlanContext';
-import FeatureGate from './components/FeatureGate';
+import { ConfirmProvider } from './components/ConfirmDialog';
 import { Toaster } from 'sonner';
-import ProtectedRoute from './components/ProtectedRoute';
-import Login from './pages/Login';
-import Signup from './pages/Signup';
-import AssetPage from './pages/AssetPage';
-import Dashboard from './pages/Dashboard';
-import Equipments from './pages/Equipments';
-import Failures from './pages/Failures';
-import Simulator from './pages/Simulator';
-import FMEA from './pages/FMEA';
-import WorkOrders from './pages/WorkOrders';
-import PreventiveMaintenance from './pages/PreventiveMaintenance';
-import Inventory from './pages/Inventory';
-import Settings from './pages/Settings';
-import ResetPassword from './pages/ResetPassword';
+import ProtectedRoute, { PageLoader, HomeRedirect } from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import BackofficeLayout from './components/BackofficeLayout';
-import Backoffice from './pages/Backoffice';
+import Login from './pages/Login';
+import ErrorBoundary from './components/ErrorBoundary';
+
+// Cada página vira um arquivo JS separado, carregado sob demanda (bundle inicial menor)
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Equipments = lazy(() => import('./pages/Equipments'));
+const Failures = lazy(() => import('./pages/Failures'));
+const Simulator = lazy(() => import('./pages/Simulator'));
+const FMEA = lazy(() => import('./pages/FMEA'));
+const WorkOrders = lazy(() => import('./pages/WorkOrders'));
+const PreventiveMaintenance = lazy(() => import('./pages/PreventiveMaintenance'));
+const Inventory = lazy(() => import('./pages/Inventory'));
+const Settings = lazy(() => import('./pages/Settings'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const Backoffice = lazy(() => import('./pages/Backoffice'));
+const EquipmentCard = lazy(() => import('./pages/EquipmentCard'));
+const EquipmentLabels = lazy(() => import('./pages/EquipmentLabels'));
+const Reports = lazy(() => import('./pages/Reports'));
+const Signup = lazy(() => import('./pages/Signup'));
+const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
+const Terms = lazy(() => import('./pages/legal/Terms'));
+const Privacy = lazy(() => import('./pages/legal/Privacy'));
+
+const { ROOT, BACKOFFICE, ADMIN, MANAGER, USER } = ROLES;
+
+// Páginas do sistema e perfis com acesso (o backend aplica as mesmas regras)
+const APP_ROUTES = [
+  { path: '/', element: <Dashboard />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
+  { path: '/work-orders', element: <WorkOrders />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER, USER] },
+  { path: '/equipments', element: <Equipments />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
+  { path: '/equipments/labels', element: <EquipmentLabels />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
+  // Ficha aberta pelo QR Code da etiqueta: todos os perfis (o técnico abre a O.S. por ela)
+  { path: '/equipamento/:id', element: <EquipmentCard />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER, USER] },
+  { path: '/preventive', element: <PreventiveMaintenance />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
+  { path: '/inventory', element: <Inventory />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
+  { path: '/failures', element: <Failures />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
+  { path: '/fmea', element: <FMEA />, roles: [ROOT, BACKOFFICE, ADMIN] },
+  { path: '/reports', element: <Reports />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
+  { path: '/simulator', element: <Simulator />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
+  // Configurações: todos (aba "Meu Perfil"); as demais abas são filtradas por perfil
+  { path: '/settings', element: <Settings />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER, USER] },
+];
 
 function App() {
   return (
-    <AuthProvider>
-      <PlanProvider>
-      <DataProvider>
-        <Router>
-          <Toaster position="top-right" richColors />
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
+    <ErrorBoundary>
+      <AuthProvider>
+        <ConfirmProvider>
+          <DataProvider>
+            <Router>
+              <Toaster position="top-right" richColors />
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/reset-password" element={<ResetPassword />} />
+                  <Route path="/cadastro" element={<Signup />} />
+                  <Route path="/verificar-email" element={<VerifyEmail />} />
+                  <Route path="/termos" element={<Terms />} />
+                  <Route path="/privacidade" element={<Privacy />} />
 
-            {/* Ficha do equipamento (destino do QR code) - todos os perfis, sem menu lateral (uso em celular) */}
-            <Route
-              path="/ativo/:id"
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER, ROLES.USER]}>
-                  <AssetPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            
-            {/* Dashboard - Root, Backoffice, Admin, Gerente */}
-            <Route 
-              path="/" 
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]}>
-                  <Layout><Dashboard /></Layout>
-                </ProtectedRoute>
-              } 
-            />
+                  {APP_ROUTES.map(({ path, element, roles }) => (
+                    <Route
+                      key={path}
+                      path={path}
+                      element={
+                        <ProtectedRoute allowedRoles={roles}>
+                          <Layout>{element}</Layout>
+                        </ProtectedRoute>
+                      }
+                    />
+                  ))}
 
-            {/* O.S. - Todos os níveis */}
-            <Route 
-              path="/work-orders" 
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER, ROLES.USER]}>
-                  <Layout><WorkOrders /></Layout>
-                </ProtectedRoute>
-              } 
-            />
+                  {/* Backoffice - APENAS Root e Suporte */}
+                  <Route
+                    path="/backoffice"
+                    element={
+                      <ProtectedRoute allowedRoles={[ROOT, BACKOFFICE]} requireTenant={false}>
+                        <BackofficeLayout><Backoffice /></BackofficeLayout>
+                      </ProtectedRoute>
+                    }
+                  />
 
-            {/* Equipamentos - Root, Backoffice, Admin, Gerente */}
-            <Route 
-              path="/equipments" 
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]}>
-                  <Layout><Equipments /></Layout>
-                </ProtectedRoute>
-              } 
-            />
-
-            {/* Planos Preventivos - Root, Backoffice, Admin, Gerente */}
-            <Route 
-              path="/preventive" 
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]}>
-                  <Layout><PreventiveMaintenance /></Layout>
-                </ProtectedRoute>
-              } 
-            />
-
-            {/* Estoque / Inventário - Root, Backoffice, Admin, Gerente */}
-            <Route 
-              path="/inventory" 
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]}>
-                  <Layout><Inventory /></Layout>
-                </ProtectedRoute>
-              } 
-            />
-
-            {/* Falhas - Root, Backoffice, Admin, Gerente */}
-            <Route 
-              path="/failures" 
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]}>
-                  <Layout><Failures /></Layout>
-                </ProtectedRoute>
-              } 
-            />
-
-            {/* FMEA - Root, Backoffice, Admin */}
-            <Route 
-              path="/fmea" 
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN]}>
-                  <Layout><FeatureGate feature="fmea"><FMEA /></FeatureGate></Layout>
-                </ProtectedRoute>
-              } 
-            />
-
-            {/* Simulador - Root, Backoffice, Admin, Gerente */}
-            <Route 
-              path="/simulator" 
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER]}>
-                  <Layout><FeatureGate feature="simulator"><Simulator /></FeatureGate></Layout>
-                </ProtectedRoute>
-              } 
-            />
-
-            {/* Configurações - Root, Backoffice, Admin */}
-            <Route 
-              path="/settings" 
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN]}>
-                  <Layout><Settings /></Layout>
-                </ProtectedRoute>
-              } 
-            />
-
-            {/* Backoffice - APENAS Root e Backoffice (Suporte) */}
-            <Route 
-              path="/backoffice" 
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.ROOT, ROLES.BACKOFFICE]}>
-                  <BackofficeLayout><Backoffice /></BackofficeLayout>
-                </ProtectedRoute>
-              } 
-            />
-
-            {/* Usuário (nível mais baixo) cai direto nas O.S. */}
-            <Route path="*" element={<Navigate to="/work-orders" replace />} />
-          </Routes>
-        </Router>
-      </DataProvider>
-      </PlanProvider>
-    </AuthProvider>
+                  {/* Rotas desconhecidas: página inicial do perfil */}
+                  <Route path="*" element={<HomeRedirect />} />
+                </Routes>
+              </Suspense>
+            </Router>
+          </DataProvider>
+        </ConfirmProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

@@ -1,341 +1,171 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
+import { useConfirm } from '../components/ConfirmDialog';
+import { apiFetch, withQuery } from '../api/client';
+import { enqueue } from '../api/outbox';
 import { toast } from 'sonner';
-import { usePlan } from './PlanContext';
 
 const DataContext = createContext();
 
+const unitStorageKey = (tenant) => `sm_unit_${tenant}`;
+const readStoredUnit = (tenant) => {
+  try {
+    const value = localStorage.getItem(unitStorageKey(tenant));
+    return value ? Number(value) : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Dados compartilhados entre as telas: unidades, unidade ativa, listas leves para
+ * seletores (equipamentos e equipe) e as operações de alteração. As listas grandes
+ * (O.S., falhas, estoque...) são paginadas no servidor por cada tela (usePagedList).
+ */
 export const DataProvider = ({ children }) => {
   const { activeTenant, token } = useAuth();
-  const { refresh: refreshPlan } = usePlan();
-  
+  const confirm = useConfirm();
+  const [units, setUnits] = useState([]);
+  const [unitState, setUnitState] = useState({ tenant: activeTenant, unit: activeTenant ? readStoredUnit(activeTenant) : null });
   const [equipments, setEquipments] = useState([]);
-  const [failures, setFailures] = useState([]);
-  const [repairs, setRepairs] = useState([]);
-  const [fmea, setFmea] = useState([]);
   const [users, setUsers] = useState([]);
-  const [workOrders, setWorkOrders] = useState([]);
-  const [inventory, setInventory] = useState([]);
-  const [preventivePlans, setPreventivePlans] = useState([]);
-  const [loading, setLoading] = useState(false);
+  // Incrementado a cada alteração: as listas paginadas recarregam sozinhas
+  const [dataVersion, setDataVersion] = useState(0);
 
-  const getHeaders = useCallback(() => ({
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  }), [token]);
+  // Ao trocar de cliente, restaura a unidade escolhida anteriormente nele
+  const activeUnit = unitState.tenant === activeTenant ? unitState.unit : (activeTenant ? readStoredUnit(activeTenant) : null);
 
-  // --- BUSCA DE DADOS ---
-  const fetchData = useCallback(async () => {
-    if (!activeTenant || !token) return;
-    setLoading(true);
+  const scope = useMemo(
+    () => ({ tenant_id: activeTenant || undefined, unit_id: activeUnit || undefined }),
+    [activeTenant, activeUnit]
+  );
+
+  const url = useCallback((path, extra = {}) => withQuery(path, { tenant_id: activeTenant, ...extra }), [activeTenant]);
+
+  const setActiveUnit = useCallback((unitId) => {
+    setUnitState({ tenant: activeTenant, unit: unitId || null });
     try {
-      const [eqs, fls, rps, fma, usr, wos, inv, prev] = await Promise.all([
-        fetch(`/api/equipments?tenant_id=${activeTenant}`, { headers: getHeaders() }).then(res => res.json()),
-        fetch(`/api/failures?tenant_id=${activeTenant}`, { headers: getHeaders() }).then(res => res.json()),
-        fetch(`/api/repairs?tenant_id=${activeTenant}`, { headers: getHeaders() }).then(res => res.json()),
-        fetch(`/api/fmea?tenant_id=${activeTenant}`, { headers: getHeaders() }).then(res => res.json()),
-        fetch(`/api/users?tenant_id=${activeTenant}`, { headers: getHeaders() }).then(res => res.json()),
-        fetch(`/api/work-orders?tenant_id=${activeTenant}`, { headers: getHeaders() }).then(res => res.json()),
-        fetch(`/api/inventory?tenant_id=${activeTenant}`, { headers: getHeaders() }).then(res => res.json()),
-        fetch(`/api/preventive-plans?tenant_id=${activeTenant}`, { headers: getHeaders() }).then(res => res.json())
-      ]);
+      if (unitId) localStorage.setItem(unitStorageKey(activeTenant), String(unitId));
+      else localStorage.removeItem(unitStorageKey(activeTenant));
+    } catch { /* armazenamento indisponível */ }
+  }, [activeTenant]);
 
-      setEquipments(eqs || []);
-      setFailures(fls || []);
-      setRepairs(rps || []);
-      setFmea(fma || []);
-      setUsers(usr || []);
-      setWorkOrders(wos || []);
-      setInventory(inv || []);
-      setPreventivePlans(prev || []);
-    } catch (error) {
-      console.error('Erro ao sincronizar dados:', error);
-      toast.error('Erro ao sincronizar dados com o servidor.');
-    } finally {
-      setLoading(false);
+  const loadLookups = useCallback(async () => {
+    if (!activeTenant || !token) return;
+    const [u, eq, us] = await Promise.allSettled([
+      apiFetch(url('/api/units')),
+      apiFetch(url('/api/equipments/options', { unit_id: activeUnit || undefined })),
+      apiFetch(url('/api/users')),
+    ]);
+    if (u.status === 'fulfilled') {
+      setUnits(u.value);
+      // Unidade salva que deixou de existir volta para "todas"
+      if (activeUnit && !u.value.some((unit) => unit.id === activeUnit)) setActiveUnit(null);
     }
-  }, [activeTenant, token, getHeaders]);
+    if (eq.status === 'fulfilled') setEquipments(eq.value);
+    if (us.status === 'fulfilled') setUsers(us.value);
+  }, [activeTenant, activeUnit, token, url, setActiveUnit]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchData();
-  }, [fetchData]);
+    loadLookups();
+  }, [loadLookups, dataVersion]);
 
-  // --- OPERAÇÕES CRUD (API) ---
-  const addEquipment = async (data) => {
+  /** Executa uma alteração, mostra o resultado e faz as telas recarregarem. Retorna o resultado ou null. */
+  const mutate = useCallback(async ({ method, path, body, success, confirmMessage }) => {
+    if (confirmMessage && !(await confirm(confirmMessage))) return null;
     try {
-      const res = await fetch('/api/equipments', {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ ...data, tenant_id: activeTenant })
-      });
-      if (res.ok) {
-        toast.success('Equipamento adicionado!');
-        fetchData();
-        refreshPlan();
-      } else {
-        const error = await res.json().catch(() => ({}));
-        toast.error(error.code === 'PLAN_LIMIT_ASSETS' ? error.error : 'Erro ao adicionar equipamento.');
+      const result = await apiFetch(url(path), { method, body });
+      if (success) toast.success(success);
+      setDataVersion((v) => v + 1);
+      return result ?? {};
+    } catch (error) {
+      // Sem internet: O.S., comentários e mudanças de status esperam no aparelho e são enviados depois
+      if (error.status === 0 && !(body instanceof FormData) && enqueue({ method, path: url(path), body })) {
+        toast.info('Sem conexão: salvo neste aparelho. Será enviado automaticamente quando a internet voltar.');
+        return { queued: true };
       }
-    } catch { toast.error('Erro ao adicionar equipamento.'); }
-  };
+      toast.error(error.message);
+      return null;
+    }
+  }, [confirm, url]);
 
-  const updateEquipment = async (id, data) => {
-    try {
-      const res = await fetch(`/api/equipments/${id}`, {
-        method: 'PUT',
-        headers: getHeaders(),
-        body: JSON.stringify(data)
-      });
-      if (res.ok) {
-        toast.success('Equipamento atualizado!');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao atualizar equipamento.'); }
-  };
+  const crud = (path, labels) => ({
+    add: (body) => mutate({ method: 'POST', path, body, success: labels.added }),
+    update: (id, body) => mutate({ method: 'PUT', path: `${path}/${id}`, body, success: labels.updated }),
+    remove: (id) => mutate({ method: 'DELETE', path: `${path}/${id}`, success: labels.removed, confirmMessage: labels.confirm }),
+  });
 
-  const deleteEquipment = async (id) => {
-    if (!window.confirm('Tem certeza que deseja excluir este equipamento?')) return;
-    try {
-      const res = await fetch(`/api/equipments/${id}`, { 
-        method: 'DELETE',
-        headers: getHeaders() 
-      });
-      if (res.ok) {
-        toast.success('Equipamento excluído.');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao excluir equipamento.'); }
-  };
+  const equipmentOps = crud('/api/equipments', {
+    added: 'Equipamento adicionado!', updated: 'Equipamento atualizado!', removed: 'Equipamento excluído.',
+    confirm: 'Excluir este equipamento? Falhas, O.S. e planos vinculados também serão removidos.',
+  });
+  const failureOps = crud('/api/failures', {
+    added: 'Falha registrada!', updated: 'Falha atualizada!', removed: 'Falha excluída.', confirm: 'Excluir este registro de falha?',
+  });
+  const fmeaOps = crud('/api/fmea', {
+    added: 'FMEA adicionado!', updated: 'FMEA atualizado!', removed: 'FMEA excluído.', confirm: 'Excluir este item da análise FMEA?',
+  });
+  const inventoryOps = crud('/api/inventory', {
+    added: 'Item adicionado ao estoque!', updated: 'Estoque atualizado!', removed: 'Item excluído.', confirm: 'Excluir item do estoque?',
+  });
+  const planOps = crud('/api/preventive-plans', {
+    added: 'Plano preventivo criado!', updated: 'Plano atualizado!', removed: 'Plano excluído.', confirm: 'Excluir este plano preventivo?',
+  });
+  const workOrderOps = crud('/api/work-orders', {
+    added: 'Ordem de Serviço criada!', updated: 'O.S. atualizada!', removed: 'O.S. excluída.', confirm: 'Excluir esta ordem de serviço?',
+  });
+  const unitOps = crud('/api/units', {
+    added: 'Unidade criada!', updated: 'Unidade atualizada!', removed: 'Unidade excluída.', confirm: 'Excluir esta unidade?',
+  });
+  const userOps = crud('/api/users', {
+    updated: 'Membro atualizado!', removed: 'Membro removido.', confirm: 'Remover este membro da equipe? Ele perderá o acesso imediatamente.',
+  });
 
-  const addFailure = async (data) => {
-    try {
-      const res = await fetch('/api/failures', {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ ...data, tenant_id: activeTenant })
-      });
-      if (res.ok) {
-        toast.success('Falha registrada!');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao registrar falha.'); }
-  };
-
-  const deleteFailure = async (id) => {
-    try {
-      const res = await fetch(`/api/failures/${id}`, { 
-        method: 'DELETE',
-        headers: getHeaders()
-      });
-      if (res.ok) {
-        toast.success('Falha excluída.');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao excluir falha.'); }
-  };
-
-  const addFmea = async (data) => {
-    try {
-      const res = await fetch('/api/fmea', {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ ...data, tenant_id: activeTenant })
-      });
-      if (res.ok) {
-        toast.success('FMEA adicionado!');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao adicionar FMEA.'); }
-  };
-
-  const deleteFmea = async (id) => {
-    try {
-      const res = await fetch(`/api/fmea/${id}`, { 
-        method: 'DELETE',
-        headers: getHeaders()
-      });
-      if (res.ok) {
-        toast.success('FMEA excluído.');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao excluir FMEA.'); }
-  };
-
-  const addWorkOrder = async (data) => {
-    try {
-      const res = await fetch('/api/work-orders', {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ ...data, tenant_id: activeTenant })
-      });
-      if (res.ok) {
-        toast.success('Ordem de Serviço criada!');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao criar O.S.'); }
-  };
-
-  const updateWorkOrder = async (id, data) => {
-    try {
-      const res = await fetch(`/api/work-orders/${id}`, {
-        method: 'PUT',
-        headers: getHeaders(),
-        body: JSON.stringify(data)
-      });
-      if (res.ok) {
-        toast.success('Status da O.S. atualizado!');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao atualizar O.S.'); }
-  };
-
-  const deleteWorkOrder = async (id) => {
-    try {
-      const res = await fetch(`/api/work-orders/${id}`, { 
-        method: 'DELETE',
-        headers: getHeaders()
-      });
-      if (res.ok) {
-        toast.success('O.S. excluída.');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao excluir O.S.'); }
-  };
-
-  const addUser = async (data) => {
-    try {
-      const res = await fetch('/api/users', {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ ...data, tenant_id: activeTenant })
-      });
-      if (res.ok) {
-        const created = await res.json();
-        toast.success('Membro da equipe adicionado!');
-        fetchData();
-        refreshPlan();
-        return created; // inclui temp_password quando a senha foi gerada pelo servidor
-      }
-      const error = await res.json().catch(() => ({}));
-      toast.error(error.error || 'Erro ao adicionar membro.');
-    } catch { toast.error('Erro ao adicionar membro.'); }
-    return null;
-  };
-
-  const addInventoryItem = async (data) => {
-    try {
-      const res = await fetch('/api/inventory', {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ ...data, tenant_id: activeTenant })
-      });
-      if (res.ok) {
-        toast.success('Item adicionado ao estoque!');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao adicionar item.'); }
-  };
-
-  const updateInventoryItem = async (id, data) => {
-    try {
-      const res = await fetch(`/api/inventory/${id}`, {
-        method: 'PUT',
-        headers: getHeaders(),
-        body: JSON.stringify(data)
-      });
-      if (res.ok) {
-        toast.success('Estoque atualizado!');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao atualizar estoque.'); }
-  };
-
-  const deleteInventoryItem = async (id) => {
-    if (!window.confirm('Excluir item do estoque?')) return;
-    try {
-      const res = await fetch(`/api/inventory/${id}`, { 
-        method: 'DELETE',
-        headers: getHeaders()
-      });
-      if (res.ok) {
-        toast.success('Item excluído.');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao excluir item.'); }
-  };
-
-  const addPreventivePlan = async (data) => {
-    try {
-      const res = await fetch('/api/preventive-plans', {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ ...data, tenant_id: activeTenant })
-      });
-      if (res.ok) {
-        toast.success('Plano preventivo criado!');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao criar plano.'); }
-  };
-
-  const updatePreventivePlan = async (id, data) => {
-    try {
-      const res = await fetch(`/api/preventive-plans/${id}`, {
-        method: 'PUT',
-        headers: getHeaders(),
-        body: JSON.stringify(data)
-      });
-      if (res.ok) {
-        toast.success('Plano atualizado!');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao atualizar plano.'); }
-  };
-
-  const deletePreventivePlan = async (id) => {
-    if (!window.confirm('Excluir este plano preventivo?')) return;
-    try {
-      const res = await fetch(`/api/preventive-plans/${id}`, { 
-        method: 'DELETE',
-        headers: getHeaders()
-      });
-      if (res.ok) {
-        toast.success('Plano excluído.');
-        fetchData();
-      } else throw new Error();
-    } catch { toast.error('Erro ao excluir plano.'); }
+  const addUser = async (body) => {
+    const result = await mutate({ method: 'POST', path: '/api/users', body });
+    if (result) {
+      toast.success(result.invite_sent
+        ? `Convite enviado para ${result.email}.`
+        : body.password ? 'Membro adicionado!' : 'Membro adicionado, mas o e-mail de convite não pôde ser enviado. Peça para ele usar "Esqueci minha senha".');
+    }
+    return result;
   };
 
   return (
     <DataContext.Provider value={{
+      scope,
+      dataVersion,
+      units,
+      activeUnit,
+      setActiveUnit,
       equipments,
-      failures,
-      repairs,
-      fmea,
       users,
-      workOrders,
-      inventory,
-      preventivePlans,
-      loading,
-      addEquipment,
-      updateEquipment,
-      deleteEquipment,
-      addFailure,
-      deleteFailure,
-      addFmea,
-      deleteFmea,
-      addWorkOrder,
-      updateWorkOrder,
-      deleteWorkOrder,
+      mutate,
+      refreshData: loadLookups,
+      addEquipment: equipmentOps.add,
+      updateEquipment: equipmentOps.update,
+      deleteEquipment: equipmentOps.remove,
+      addFailure: failureOps.add,
+      updateFailure: failureOps.update,
+      deleteFailure: failureOps.remove,
+      addFmea: fmeaOps.add,
+      updateFmea: fmeaOps.update,
+      deleteFmea: fmeaOps.remove,
+      addWorkOrder: workOrderOps.add,
+      updateWorkOrder: workOrderOps.update,
+      deleteWorkOrder: workOrderOps.remove,
+      addInventoryItem: inventoryOps.add,
+      updateInventoryItem: inventoryOps.update,
+      deleteInventoryItem: inventoryOps.remove,
+      addPreventivePlan: planOps.add,
+      updatePreventivePlan: planOps.update,
+      deletePreventivePlan: planOps.remove,
+      addUnit: unitOps.add,
+      updateUnit: unitOps.update,
+      deleteUnit: unitOps.remove,
       addUser,
-      addInventoryItem,
-      updateInventoryItem,
-      deleteInventoryItem,
-      addPreventivePlan,
-      updatePreventivePlan,
-      deletePreventivePlan,
-      refreshData: fetchData
+      updateUser: userOps.update,
+      deleteUser: userOps.remove,
     }}>
       {children}
     </DataContext.Provider>

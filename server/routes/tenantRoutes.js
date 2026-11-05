@@ -1,175 +1,228 @@
 const express = require('express');
+const db = require('../db');
+const { query, assertAffected, buildUpdate } = require('../utils/routeHelpers');
+const { HttpError } = require('../utils/errorHandler');
+const { initialPassword, sendInvite } = require('../utils/passwords');
+const { assertWithinLimit } = require('../utils/plans');
+const { audit } = require('../utils/audit');
+const {
+  ROLES, TENANT_ROLES, isBackoffice, requireRole, requireBackoffice, requireMaster, tenantScope,
+} = require('../middleware/rbac');
+const { parse, z, text, optionalText, date, nonNegative, password, email, idParam } = require('../utils/validate');
+
 const router = express.Router();
-const bcrypt = require('bcrypt');
-const { query, getTenantId, isBackoffice, generateTempPassword } = require('../utils/routeHelpers');
-const { handleQueryError } = require('../utils/errorHandler');
-const authMiddleware = require('../middleware/auth');
-const { isValidPlan, normalizePlan, DEFAULT_PLAN } = require('../utils/plans');
-const { insertWithinLimit } = require('../utils/planLimits');
 
-router.use(authMiddleware);
+const TENANT_STATUSES = ['Ativo', 'Inadimplente', 'Cancelado', 'Trial'];
+const tenantSlug = z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]{1,49}$/, 'use apenas letras minúsculas, números e hífen (2 a 50 caracteres)');
+const tenantParam = (req) => parse(z.object({ id: tenantSlug }), req.params).id;
 
-// --- BACKOFFICE ADMIN ROUTES ---
-router.get('/admin/tenants', async (req, res) => {
-  if (!isBackoffice(req)) return res.status(403).json({ error: 'Proibido' });
-  try {
-    const sql = `
-      SELECT t.*, 
-             (SELECT COUNT(*) FROM users u WHERE u.tenant_id = t.id) as users_count,
-             (SELECT COUNT(*) FROM equipments e WHERE e.tenant_id = t.id) as equipments_count,
-             (SELECT COUNT(*) FROM invoices i WHERE i.tenant_id = t.id AND i.status = 'Pendente') as pending_invoices,
-             (SELECT COALESCE(SUM(i.valor), 0) FROM invoices i WHERE i.tenant_id = t.id AND i.status = 'Pendente') as pending_value
-      FROM tenants t
-    `;
-    const rows = await query(sql);
-    res.json(rows);
-  } catch (err) { handleQueryError(res, err, 'Erro ao listar clientes'); }
+// Dados cadastrais usados como tomador na NFS-e
+const digits = (max) => z.string().trim().transform((v) => v.replace(/\D/g, '')).pipe(z.string().max(max)).nullish();
+const billingDataSchema = z.object({
+  razao_social: optionalText(),
+  cnpj: digits(14),
+  email_financeiro: email.nullish().or(z.literal('').transform(() => null)),
+  cep: digits(8),
+  logradouro: optionalText(),
+  numero: optionalText(20),
+  complemento: optionalText(100),
+  bairro: optionalText(100),
+  municipio_ibge: digits(7),
+  cidade: optionalText(100),
+  uf: z.string().trim().toUpperCase().length(2).nullish().or(z.literal('').transform(() => null)),
+});
+const BILLING_COLUMNS = Object.keys(billingDataSchema.shape);
+
+// --- BACKOFFICE: CLIENTES ---
+router.get('/admin/tenants', requireBackoffice, async (req, res) => {
+  const rows = await query(`
+    SELECT t.*,
+           (SELECT COUNT(*) FROM users u WHERE u.tenant_id = t.id) AS users_count,
+           (SELECT COUNT(*) FROM equipments e WHERE e.tenant_id = t.id) AS equipments_count,
+           (SELECT COUNT(*) FROM invoices i WHERE i.tenant_id = t.id AND i.status IN ('Pendente', 'Atrasada')) AS pending_invoices,
+           (SELECT COALESCE(SUM(i.valor), 0) FROM invoices i WHERE i.tenant_id = t.id AND i.status IN ('Pendente', 'Atrasada')) AS pending_value
+    FROM tenants t ORDER BY t.name
+  `);
+  res.json(rows);
 });
 
-router.post('/admin/tenants', async (req, res) => {
-  if (!isBackoffice(req)) return res.status(403).json({ error: 'Proibido' });
-  const { id, name, plan_type, contact_email, contact_phone } = req.body;
-  if (plan_type && !isValidPlan(plan_type)) return res.status(400).json({ error: 'Plano inválido' });
-  try {
-    await query(
+router.post('/admin/tenants', requireBackoffice, async (req, res) => {
+  const data = parse(z.object({
+    id: tenantSlug,
+    name: text(),
+    plan_type: optionalText(50),
+    contact_email: email,
+    contact_phone: optionalText(50),
+    admin_name: optionalText(),
+  }), req.body);
+
+  const exists = await query('SELECT id FROM users WHERE email = ?', [data.contact_email]);
+  if (exists.length > 0) throw new HttpError(409, 'Já existe um usuário com este e-mail');
+
+  const { hash } = await initialPassword();
+  const admin = await db.transaction(async (q) => {
+    await q(
       'INSERT INTO tenants (id, name, plan_type, contact_email, contact_phone) VALUES (?, ?, ?, ?, ?)',
-      [id, name, plan_type ? normalizePlan(plan_type) : DEFAULT_PLAN, contact_email, contact_phone]
+      [data.id, data.name, data.plan_type || 'Pro', data.contact_email, data.contact_phone || null]
     );
-    const tempPassword = generateTempPassword();
-    const hashedPassword = await bcrypt.hash(tempPassword, 10);
-    await query(
+    await q("INSERT INTO units (tenant_id, name) VALUES (?, 'Unidade Principal')", [data.id]);
+    const adminName = data.admin_name || `Admin ${data.name}`;
+    const result = await q(
       'INSERT INTO users (tenant_id, name, email, role, password) VALUES (?, ?, ?, ?, ?)',
-      [id, `Admin ${name}`, contact_email || `admin@${id}.com`, 'Administrador', hashedPassword]
+      [data.id, adminName, data.contact_email, ROLES.ADMIN, hash]
     );
-    // A senha provisória só é exibida nesta resposta; o cliente pode trocá-la via "esqueci minha senha"
-    res.json({ message: 'Cliente cadastrado', id, temp_password: tempPassword });
-  } catch (err) { handleQueryError(res, err, 'Erro ao criar cliente'); }
+    return { id: result.insertId, name: adminName, email: data.contact_email };
+  });
+
+  const inviteSent = await sendInvite(query, admin, data.name);
+  await audit(req, { action: 'create', entity: 'tenant', entityId: data.id, changes: data, tenantId: data.id });
+  res.status(201).json({ message: 'Cliente cadastrado', id: data.id, invite_sent: inviteSent });
 });
 
-router.put('/admin/tenants/:id', async (req, res) => {
-  if (!isBackoffice(req)) return res.status(403).json({ error: 'Proibido' });
-  const { name, plan_type, contact_email, contact_phone } = req.body;
-  if (plan_type && !isValidPlan(plan_type)) return res.status(400).json({ error: 'Plano inválido' });
-  try {
-    await query(
-      'UPDATE tenants SET name=COALESCE(?,name), plan_type=COALESCE(?,plan_type), contact_email=COALESCE(?,contact_email), contact_phone=COALESCE(?,contact_phone) WHERE id=?',
-      [name, plan_type ? normalizePlan(plan_type) : null, contact_email, contact_phone, req.params.id]
-    );
-    res.json({ message: 'Cliente atualizado' });
-  } catch (err) { handleQueryError(res, err, 'Erro ao atualizar cliente'); }
+router.put('/admin/tenants/:id', requireBackoffice, async (req, res) => {
+  const tenantId = tenantParam(req);
+  const data = parse(billingDataSchema.extend({
+    name: text().optional(),
+    plan_type: text(50).optional(),
+    contact_email: email.optional(),
+    contact_phone: optionalText(50),
+  }), req.body);
+  const { sql, params } = buildUpdate(data, ['name', 'plan_type', 'contact_email', 'contact_phone', ...BILLING_COLUMNS]);
+  assertAffected(await query(`UPDATE tenants SET ${sql} WHERE id = ?`, [...params, tenantId]), 'Cliente não encontrado');
+  await audit(req, { action: 'update', entity: 'tenant', entityId: tenantId, changes: data, tenantId });
+  res.json({ message: 'Cliente atualizado' });
 });
 
-router.put('/admin/tenants/:id/status', async (req, res) => {
-  if (!isBackoffice(req)) return res.status(403).json({ error: 'Proibido' });
-  try {
-    const { status } = req.body;
-    await query('UPDATE tenants SET status = ? WHERE id = ?', [status, req.params.id]);
-    res.json({ message: 'Status atualizado' });
-  } catch (err) { handleQueryError(res, err, 'Erro ao atualizar status'); }
+router.put('/admin/tenants/:id/status', requireBackoffice, async (req, res) => {
+  const tenantId = tenantParam(req);
+  const { status } = parse(z.object({ status: z.enum(TENANT_STATUSES) }), req.body);
+  assertAffected(await query('UPDATE tenants SET status = ? WHERE id = ?', [status, tenantId]), 'Cliente não encontrado');
+  await audit(req, { action: `status:${status}`, entity: 'tenant', entityId: tenantId, tenantId });
+  res.json({ message: 'Status atualizado' });
 });
 
-router.delete('/admin/tenants/:id', async (req, res) => {
-  if (!req.user.is_master) return res.status(403).json({ error: 'Apenas o Root pode excluir clientes' });
-  try {
-    await query('DELETE FROM tenants WHERE id = ?', [req.params.id]);
-    res.json({ message: 'Cliente excluído permanentemente' });
-  } catch (err) { handleQueryError(res, err, 'Erro ao excluir cliente'); }
+router.delete('/admin/tenants/:id', requireMaster, async (req, res) => {
+  const tenantId = tenantParam(req);
+  assertAffected(await query('DELETE FROM tenants WHERE id = ?', [tenantId]), 'Cliente não encontrado');
+  // audit_logs não tem FK: o registro da exclusão fica no log do backoffice (tenant_id nulo)
+  await audit(req, { action: 'delete', entity: 'tenant', entityId: tenantId, tenantId: null });
+  res.json({ message: 'Cliente excluído permanentemente' });
 });
 
-router.put('/admin/tenants/:id/contract', async (req, res) => {
-  if (!isBackoffice(req)) return res.status(403).json({ error: 'Proibido' });
-  const { contrato_inicio, contrato_fim, renovacao_auto, valor_mensal, plan_type, status, extra_assets, extra_users } = req.body;
-  if (plan_type && !isValidPlan(plan_type)) return res.status(400).json({ error: 'Plano inválido' });
-  const isCount = (v) => v === undefined || v === null || v === '' || (Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 100000);
-  if (!isCount(extra_assets) || !isCount(extra_users)) return res.status(400).json({ error: 'Excedentes devem ser inteiros não negativos' });
-  const toCount = (v) => (v === undefined || v === null || v === '' ? null : Number(v));
-  try {
-    await query(
-      `UPDATE tenants SET 
-        contrato_inicio=COALESCE(?,contrato_inicio), 
-        contrato_fim=COALESCE(?,contrato_fim), 
-        renovacao_auto=COALESCE(?,renovacao_auto), 
-        valor_mensal=COALESCE(?,valor_mensal), 
-        plan_type=COALESCE(?,plan_type),
-        status=COALESCE(?,status),
-        extra_assets=COALESCE(?,extra_assets),
-        extra_users=COALESCE(?,extra_users)
-      WHERE id=?`,
-      [contrato_inicio, contrato_fim, renovacao_auto, valor_mensal, plan_type ? normalizePlan(plan_type) : null, status, toCount(extra_assets), toCount(extra_users), req.params.id]
-    );
-    res.json({ message: 'Contrato atualizado' });
-  } catch (err) { handleQueryError(res, err, 'Erro ao atualizar contrato'); }
+router.put('/admin/tenants/:id/contract', requireBackoffice, async (req, res) => {
+  const tenantId = tenantParam(req);
+  const data = parse(z.object({
+    contrato_inicio: date.or(z.literal('')).optional(),
+    contrato_fim: date.or(z.literal('')).optional(),
+    renovacao_auto: z.union([z.boolean(), z.number().int().min(0).max(1).transform(Boolean)]).optional(),
+    valor_mensal: nonNegative.optional(),
+    plan_type: text(50).optional(),
+    status: z.enum(TENANT_STATUSES).optional(),
+  }), req.body);
+  // Campo de data vazio no formulário significa "sem data"
+  for (const key of ['contrato_inicio', 'contrato_fim']) if (data[key] === '') data[key] = null;
+
+  const { sql, params } = buildUpdate(data, ['contrato_inicio', 'contrato_fim', 'renovacao_auto', 'valor_mensal', 'plan_type', 'status']);
+  assertAffected(await query(`UPDATE tenants SET ${sql} WHERE id = ?`, [...params, tenantId]), 'Cliente não encontrado');
+  await audit(req, { action: 'update_contract', entity: 'tenant', entityId: tenantId, changes: data, tenantId });
+  res.json({ message: 'Contrato atualizado' });
 });
 
-router.get('/admin/users', async (req, res) => {
-  if (!req.user.is_master) return res.status(403).json({ error: 'Proibido' });
-  try {
-    const rows = await query('SELECT id, name, email, role, is_master, created_at FROM users WHERE is_master = TRUE OR role = "Suporte"');
-    res.json(rows);
-  } catch (err) { handleQueryError(res, err, 'Erro ao listar usuários backoffice'); }
+// --- BACKOFFICE: EQUIPE DE SUPORTE ---
+router.get('/admin/users', requireMaster, async (req, res) => {
+  const rows = await query("SELECT id, name, email, role, is_master, created_at FROM users WHERE is_master = TRUE OR role = 'Suporte' ORDER BY name");
+  res.json(rows);
 });
 
-router.post('/admin/users', async (req, res) => {
-  if (!req.user.is_master) return res.status(403).json({ error: 'Apenas Root pode criar agentes de backoffice' });
-  const { name, email, password } = req.body;
-  try {
-    const tempPassword = password ? null : generateTempPassword();
-    const hashedPassword = await bcrypt.hash(password || tempPassword, 10);
-    const result = await query(
-      'INSERT INTO users (tenant_id, name, email, role, password, is_master) VALUES (NULL, ?, ?, "Suporte", ?, FALSE)',
-      [name, email, hashedPassword]
-    );
-    res.json({ id: result.insertId, name, email, role: 'Suporte', ...(tempPassword && { temp_password: tempPassword }) });
-  } catch (err) { handleQueryError(res, err, 'Erro ao criar agente de backoffice'); }
+router.post('/admin/users', requireMaster, async (req, res) => {
+  const data = parse(z.object({ name: text(), email, password: password.optional().or(z.literal('')) }), req.body);
+  const { hash, invite } = await initialPassword(data.password || null);
+  const result = await query(
+    "INSERT INTO users (tenant_id, name, email, role, password, is_master) VALUES (NULL, ?, ?, 'Suporte', ?, FALSE)",
+    [data.name, data.email, hash]
+  );
+  const user = { id: result.insertId, name: data.name, email: data.email };
+  const inviteSent = invite ? await sendInvite(query, user, null) : false;
+  await audit(req, { action: 'create', entity: 'support_user', entityId: user.id, changes: { name: data.name, email: data.email }, tenantId: null });
+  res.status(201).json({ ...user, role: ROLES.SUPPORT, invite_sent: inviteSent });
 });
 
-// --- TENANTS & USUÁRIOS DO CLIENTE ---
+// --- DADOS DO CLIENTE ---
 router.get('/tenants', async (req, res) => {
-  try {
-    if (isBackoffice(req)) {
-      const rows = await query('SELECT * FROM tenants');
-      res.json(rows);
-    } else {
-      const rows = await query('SELECT * FROM tenants WHERE id = ?', [req.user.tenant_id]);
-      res.json(rows);
-    }
-  } catch (err) { handleQueryError(res, err, 'Erro ao listar dados do tenant'); }
+  const rows = isBackoffice(req.user)
+    ? await query('SELECT * FROM tenants ORDER BY name')
+    : await query('SELECT * FROM tenants WHERE id = ?', [req.user.tenant_id]);
+  res.json(rows);
 });
 
-router.get('/users', async (req, res) => {
-  const tenant_id = getTenantId(req);
-  try {
-    const rows = await query('SELECT id, name, email, role, tenant_id, is_master FROM users WHERE tenant_id = ?', [tenant_id]);
-    res.json(rows);
-  } catch (err) { handleQueryError(res, err, 'Erro ao listar usuários'); }
+router.put('/tenant', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
+  const data = parse(billingDataSchema.extend({
+    name: text().optional(),
+    contact_email: email.optional(),
+    contact_phone: optionalText(50),
+  }), req.body);
+  const { sql, params } = buildUpdate(data, ['name', 'contact_email', 'contact_phone', ...BILLING_COLUMNS]);
+  await query(`UPDATE tenants SET ${sql} WHERE id = ?`, [...params, req.tenantId]);
+  await audit(req, { action: 'update', entity: 'tenant', entityId: req.tenantId, changes: data });
+  res.json({ message: 'Dados da empresa atualizados' });
 });
 
-router.post('/users', async (req, res) => {
-  const tenant_id = getTenantId(req);
-  const { name, email, role, password } = req.body;
-  try {
-    const allowed = ['Administrador', 'Dono', 'Suporte'];
-    if (!allowed.includes(req.user.role) && !req.user.is_master) {
-      return res.status(403).json({ error: 'Sem permissão' });
-    }
-    if (!tenant_id) return res.status(400).json({ error: 'Tenant ID required' });
-    // Usuários de cliente só podem ter papéis de cliente. "Suporte" é backoffice (acesso a todos os tenants)
-    // e só é criado por /admin/users.
-    const rolesCliente = ['Dono', 'Administrador', 'Usuário'];
-    if (!rolesCliente.includes(role)) {
-      return res.status(400).json({ error: 'Papel inválido' });
-    }
-    const tempPassword = password ? null : generateTempPassword();
-    const hashedPassword = await bcrypt.hash(password || tempPassword, 10);
-    const r = await insertWithinLimit(
-      tenant_id, 'users',
-      'INSERT INTO users (tenant_id, name, email, role, password) VALUES (?, ?, ?, ?, ?)',
-      [tenant_id, name, email, role, hashedPassword]
-    );
-    if (r.notFound) return res.status(404).json({ error: 'Tenant não encontrado' });
-    if (r.limitReached) return res.status(403).json({ code: 'PLAN_LIMIT_USERS', error: r.message, limit: r.limit });
-    res.json({ id: r.insertId, name, email, role, tenant_id, ...(tempPassword && { temp_password: tempPassword }) });
-  } catch (err) { handleQueryError(res, err, 'Erro ao criar usuário'); }
+// --- EQUIPE DO CLIENTE ---
+router.get('/users', tenantScope, async (req, res) => {
+  // Todos os perfis veem nomes (ex.: responsável da O.S.); e-mails só para administradores
+  const canSeeEmail = isBackoffice(req.user) || req.user.role === ROLES.ADMIN;
+  const columns = canSeeEmail ? 'id, name, email, role, tenant_id' : 'id, name, role, tenant_id';
+  res.json(await query(`SELECT ${columns} FROM users WHERE tenant_id = ? ORDER BY name`, [req.tenantId]));
+});
+
+router.post('/users', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
+  const data = parse(z.object({
+    name: text(),
+    email,
+    role: z.enum(TENANT_ROLES),
+    password: password.optional().or(z.literal('')),
+  }), req.body);
+
+  await assertWithinLimit(req.tenantId, 'users');
+  const { hash, invite } = await initialPassword(data.password || null);
+  const result = await query(
+    'INSERT INTO users (tenant_id, name, email, role, password) VALUES (?, ?, ?, ?, ?)',
+    [req.tenantId, data.name, data.email, data.role, hash]
+  );
+  const user = { id: result.insertId, name: data.name, email: data.email };
+  let inviteSent = false;
+  if (invite) {
+    const [tenant] = await query('SELECT name FROM tenants WHERE id = ?', [req.tenantId]);
+    inviteSent = await sendInvite(query, user, tenant?.name);
+  }
+  await audit(req, { action: 'create', entity: 'user', entityId: user.id, changes: { name: data.name, email: data.email, role: data.role } });
+  res.status(201).json({ ...user, role: data.role, tenant_id: req.tenantId, invite_sent: inviteSent });
+});
+
+router.put('/users/:id', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
+  const userId = idParam(req);
+  const data = parse(z.object({ name: text().optional(), email: email.optional(), role: z.enum(TENANT_ROLES).optional() }), req.body);
+  if (userId === req.user.id && data.role && data.role !== req.user.role) {
+    throw new HttpError(400, 'Você não pode alterar o seu próprio perfil de acesso');
+  }
+  const { sql, params } = buildUpdate(data, ['name', 'email', 'role']);
+  assertAffected(
+    await query(`UPDATE users SET ${sql} WHERE id = ? AND tenant_id = ? AND is_master = FALSE`, [...params, userId, req.tenantId]),
+    'Usuário não encontrado'
+  );
+  await audit(req, { action: 'update', entity: 'user', entityId: userId, changes: data });
+  res.json({ message: 'Usuário atualizado' });
+});
+
+router.delete('/users/:id', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
+  const userId = idParam(req);
+  if (userId === req.user.id) throw new HttpError(400, 'Você não pode excluir o seu próprio usuário');
+  assertAffected(
+    await query('DELETE FROM users WHERE id = ? AND tenant_id = ? AND is_master = FALSE', [userId, req.tenantId]),
+    'Usuário não encontrado'
+  );
+  await audit(req, { action: 'delete', entity: 'user', entityId: userId });
+  res.json({ message: 'Usuário excluído' });
 });
 
 module.exports = router;

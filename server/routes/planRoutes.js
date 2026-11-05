@@ -1,23 +1,40 @@
 const express = require('express');
+const { query, assertAffected, buildUpdate } = require('../utils/routeHelpers');
+const { getUsage } = require('../utils/plans');
+const { audit } = require('../utils/audit');
+const { ROLES, requireRole, requireMaster, tenantScope } = require('../middleware/rbac');
+const { parse, z, text } = require('../utils/validate');
+
 const router = express.Router();
-const { getTenantId } = require('../utils/routeHelpers');
-const { handleQueryError } = require('../utils/errorHandler');
-const { getLimits } = require('../utils/plans');
-const { getUsage, loadTenant } = require('../utils/planLimits');
-const authMiddleware = require('../middleware/auth');
 
-router.use(authMiddleware);
+// Limite vazio (null) = ilimitado
+// z.null() vem primeiro: z.coerce.number() transformaria null em 0 (bloquearia tudo)
+const limit = z.union([z.null(), z.coerce.number().int().min(0)]).optional();
 
-// Plano, limites e uso do tenant (próprio; master/suporte podem consultar outro via ?tenant_id)
-router.get('/plan', async (req, res) => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) return res.status(400).json({ error: 'Tenant ID required' });
-  try {
-    const tenant = await loadTenant(tenantId);
-    if (!tenant) return res.status(404).json({ error: 'Tenant não encontrado' });
-    const { plan, assets, users, features } = getLimits(tenant);
-    res.json({ plan, limits: { assets, users }, usage: await getUsage(tenantId), features });
-  } catch (err) { handleQueryError(res, err, 'Erro ao consultar plano'); }
+router.get('/plans', async (req, res) => {
+  res.json(await query('SELECT * FROM plans ORDER BY sort_order, price_monthly'));
+});
+
+router.put('/admin/plans/:id', requireMaster, async (req, res) => {
+  const planId = parse(z.object({ id: z.string().min(1).max(50) }), req.params).id;
+  const d = parse(z.object({
+    name: text(100).optional(),
+    price_monthly: z.coerce.number().min(0).optional(),
+    max_users: limit,
+    max_equipments: limit,
+    max_units: limit,
+    trial_days: z.coerce.number().int().min(0).max(365).optional(),
+    active: z.boolean().optional(),
+  }), req.body);
+  const { sql, params } = buildUpdate(d, ['name', 'price_monthly', 'max_users', 'max_equipments', 'max_units', 'trial_days', 'active']);
+  assertAffected(await query(`UPDATE plans SET ${sql} WHERE id = ?`, [...params, planId]), 'Plano não encontrado');
+  await audit(req, { action: 'update', entity: 'plan', entityId: planId, changes: d, tenantId: null });
+  res.json({ message: 'Plano atualizado' });
+});
+
+// Uso do cliente frente aos limites do plano (exibido em Configurações > Faturamento)
+router.get('/billing/usage', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
+  res.json(await getUsage(req.tenantId));
 });
 
 module.exports = router;

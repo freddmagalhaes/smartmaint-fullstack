@@ -1,29 +1,43 @@
-# Estágio 1: Build (Compilação) usando Node 20 (compatível com Vite 8 e React Router 7)
-FROM node:20-alpine AS build
+# SmartMaint — imagem única (frontend + API), pronta para AWS (ECS, App Runner, Elastic Beanstalk).
+# O Node serve a API em /api, os arquivos em /uploads e o build do React nas demais rotas.
+
+# ---------- 1. Build do frontend ----------
+FROM node:22-alpine AS web
 WORKDIR /app
-
-# Copia apenas os arquivos de dependência primeiro (aproveita o cache do Docker)
-COPY package*.json ./
-
-# Instala as dependências do frontend.
-# --ignore-scripts evita o "postinstall" que instalaria o backend (não é necessário aqui)
+COPY package.json package-lock.json ./
+# --ignore-scripts: o postinstall instala o backend, que tem estágio próprio
 RUN npm ci --ignore-scripts
-
-# Copia o restante do código e faz o build de produção do React/Vite
-COPY . .
+# Sentry do frontend (opcional): docker build --build-arg VITE_SENTRY_DSN=...
+ARG VITE_SENTRY_DSN
+ARG VITE_APP_VERSION
+COPY index.html vite.config.js eslint.config.js ./
+COPY public ./public
+COPY src ./src
 RUN npm run build
 
-# Estágio 2: Produção (Servidor Nginx)
-FROM nginx:alpine
+# ---------- 2. Dependências de produção do backend ----------
+FROM node:22-alpine AS api-deps
+WORKDIR /app/server
+COPY server/package.json server/package-lock.json ./
+RUN npm ci --omit=dev
 
-# Configuração do Nginx: SPA + proxy de /api e /uploads para o backend
-COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+# ---------- 3. Imagem final ----------
+FROM node:22-alpine
+ENV NODE_ENV=production \
+    PORT=3001 \
+    UPLOAD_DIR=/app/uploads
+WORKDIR /app
 
-# Copia a pasta gerada pelo build para o Nginx
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY --from=api-deps /app/server/node_modules ./server/node_modules
+COPY server ./server
+COPY --from=web /app/dist ./dist
 
-# Expõe a porta 80 internamente
-EXPOSE 80
+# Pasta de uploads local (em produção prefira S3_BUCKET: o disco do container é descartado a cada deploy)
+RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
+USER node
 
-# Inicia o servidor
-CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 3001
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -qO- "http://127.0.0.1:${PORT}/api/health" || exit 1
+
+CMD ["node", "server/index.js"]

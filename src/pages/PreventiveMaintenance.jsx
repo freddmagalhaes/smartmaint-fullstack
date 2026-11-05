@@ -4,10 +4,21 @@ import {
   Edit2, Trash2, Clock, CheckCircle2, AlertCircle
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
+import { useConfirm } from '../components/ConfirmDialog';
+import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
+import { apiFetch, withQuery } from '../api/client';
+import { formatDate, todayISO } from '../utils/format';
+import { usePagedList, useDebounced } from '../hooks/usePagedList';
+import Pagination from '../components/Pagination';
 
 const PreventiveMaintenance = () => {
-  const { preventivePlans, equipments, addPreventivePlan, updatePreventivePlan, deletePreventivePlan } = useData();
+  const { equipments, scope, addPreventivePlan, updatePreventivePlan, deletePreventivePlan } = useData();
+  const confirm = useConfirm();
   const [searchTerm, setSearchTerm] = useState('');
+  const [dueFilter, setDueFilter] = useState('');
+  const search = useDebounced(searchTerm.trim());
+  const list = usePagedList('/api/preventive-plans', { q: search || undefined, due: dueFilter || undefined });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
@@ -19,57 +30,61 @@ const PreventiveMaintenance = () => {
     status: 'Ativo'
   });
 
-  const filteredPlans = preventivePlans.filter(plan => 
-    plan.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (plan.equipment_name && plan.equipment_name.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
-
   const handleOpenAdd = () => {
     setEditingId(null);
     setFormData({ 
       equipment_id: equipments[0]?.id || '', 
-      title: '', description: '', interval_days: 30, status: 'Ativo' 
+      title: '', description: '', interval_days: 30, status: 'Ativo',
+      auto_generate: true, lead_days: 3, checklistText: '',
     });
     setIsModalOpen(true);
   };
 
-  const handleOpenEdit = (plan) => {
+  const handleOpenEdit = async (plan) => {
     setEditingId(plan.id);
-    setFormData({ ...plan });
+    setFormData({ ...plan, auto_generate: Boolean(plan.auto_generate), checklistText: '' });
     setIsModalOpen(true);
+    // Checklist vem do detalhe do plano
+    try {
+      const detail = await apiFetch(withQuery(`/api/preventive-plans/${plan.id}`, { tenant_id: scope.tenant_id }));
+      setFormData((prev) => ({ ...prev, checklistText: detail.checklist.join('\n') }));
+    } catch (err) {
+      toast.error(err.message);
+    }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const data = { 
-      ...formData, 
+    const data = {
       equipment_id: Number(formData.equipment_id),
-      interval_days: Number(formData.interval_days)
+      title: formData.title,
+      description: formData.description,
+      interval_days: Number(formData.interval_days),
+      status: formData.status,
+      auto_generate: Boolean(formData.auto_generate),
+      lead_days: Number(formData.lead_days) || 0,
+      // Um item do checklist por linha
+      checklist: (formData.checklistText || '').split('\n').map((l) => l.trim()).filter(Boolean),
     };
-    if (editingId) {
-      updatePreventivePlan(editingId, data);
-    } else {
-      addPreventivePlan(data);
-    }
-    setIsModalOpen(false);
+    const ok = editingId ? await updatePreventivePlan(editingId, data) : await addPreventivePlan(data);
+    if (ok) setIsModalOpen(false);
   };
 
-  const handleExecute = (id) => {
-    if(window.confirm('Marcar este plano como executado hoje? Isso reiniciará o ciclo.')) {
-      updatePreventivePlan(id, { reset_due: true });
-    }
+  const handleExecute = async (id) => {
+    const confirmed = await confirm('Marcar este plano como executado hoje? O próximo vencimento será recalculado.', { title: 'Registrar execução', confirmLabel: 'Registrar', danger: false });
+    if (confirmed) updatePreventivePlan(id, { reset_due: true });
   };
 
   const getStatusColor = (status) => status === 'Ativo' ? 'var(--success)' : 'var(--text-muted)';
 
   return (
     <div className="fade-in">
-      <header style={styles.header}>
+      <header className="page-header" style={styles.header}>
         <div>
           <h1 style={styles.pageTitle}>Planos Preventivos</h1>
           <p style={styles.pageSubtitle}>Agende e controle manutenções recorrentes nos equipamentos.</p>
         </div>
-        <button className="btn-primary" onClick={handleOpenAdd}>
+        <button className="btn-primary" onClick={handleOpenAdd} disabled={equipments.length === 0}>
           <Plus size={20} />
           Novo Plano
         </button>
@@ -86,10 +101,16 @@ const PreventiveMaintenance = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+        <select aria-label="Filtrar por vencimento" style={styles.filterSelect} value={dueFilter} onChange={(e) => setDueFilter(e.target.value)}>
+          <option value="">Todos os planos</option>
+          <option value="atrasados">Atrasados</option>
+          <option value="7dias">Vencendo em 7 dias</option>
+        </select>
       </div>
 
       <div className="premium-card" style={{ overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
+          <div className="table-wrap">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border)' }}>
@@ -102,8 +123,8 @@ const PreventiveMaintenance = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredPlans.length > 0 ? filteredPlans.map(plan => {
-                const isLate = new Date(plan.next_due) < new Date() && plan.status === 'Ativo';
+              {list.items.length > 0 ? list.items.map(plan => {
+                const isLate = plan.next_due && plan.next_due < todayISO() && plan.status === 'Ativo';
                 return (
                   <tr key={plan.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={styles.td}>
@@ -124,15 +145,21 @@ const PreventiveMaintenance = () => {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <Clock size={14} color="var(--text-muted)" /> {plan.interval_days} dias
                       </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        {plan.auto_generate ? 'O.S. automática' : 'Manual'}{Number(plan.checklist_count) > 0 ? ` · ${plan.checklist_count} itens no checklist` : ''}
+                      </div>
+                      {plan.open_work_order_id && (
+                        <Link to={`/work-orders?open=${plan.open_work_order_id}`} style={{ fontSize: '12px', fontWeight: 600 }}>O.S. #{plan.open_work_order_id} em aberto</Link>
+                      )}
                     </td>
                     <td style={styles.td}>
                       {isLate ? (
                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--danger)', fontSize: '13px', fontWeight: '600' }}>
-                           <AlertCircle size={14} /> {new Date(plan.next_due).toLocaleDateString('pt-BR')} (Atrasado)
+                           <AlertCircle size={14} /> {formatDate(plan.next_due)} (Atrasado)
                          </div>
                       ) : (
                         <div style={{ fontSize: '13px', color: 'var(--text-main)' }}>
-                          {new Date(plan.next_due).toLocaleDateString('pt-BR')}
+                          {formatDate(plan.next_due)}
                         </div>
                       )}
                     </td>
@@ -162,17 +189,20 @@ const PreventiveMaintenance = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 
+      <Pagination page={list.page} pageSize={list.pageSize} total={list.total} onChange={list.setPage} loading={list.loading} />
+
       {isModalOpen && (
-        <div style={styles.modalOverlay}>
-          <div className="premium-card fade-in" style={styles.modal}>
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>{editingId ? 'Editar Plano' : 'Novo Plano Preventivo'}</h3>
             </div>
             <form onSubmit={handleSubmit}>
-              <div style={styles.formGrid}>
+              <div className="form-grid" style={styles.formGrid}>
                 <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
                   <label style={styles.label}>Título do Plano</label>
                   <input required style={styles.input} value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} placeholder="Ex: Troca de Óleo Mensal" />
@@ -198,6 +228,22 @@ const PreventiveMaintenance = () => {
                     <option value="Pausado">Pausado</option>
                   </select>
                 </div>
+                <div style={{ ...styles.inputGroup, gridColumn: 'span 2' }}>
+                  <label style={{ ...styles.label, display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500 }}>
+                    <input type="checkbox" checked={Boolean(formData.auto_generate)} onChange={(e) => setFormData({...formData, auto_generate: e.target.checked})} />
+                    Gerar a O.S. automaticamente no vencimento
+                  </label>
+                </div>
+                {formData.auto_generate && (
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Gerar com antecedência de (dias)</label>
+                    <input type="number" min="0" max="60" style={styles.input} value={formData.lead_days ?? 0} onChange={(e) => setFormData({...formData, lead_days: e.target.value})} />
+                  </div>
+                )}
+                <div style={{ ...styles.inputGroup, gridColumn: 'span 2' }}>
+                  <label style={styles.label}>Checklist (um item por linha)</label>
+                  <textarea rows={4} style={styles.input} placeholder={'Ex.:\nVerificar nível de óleo\nLimpar filtro de ar\nMedir vibração'} value={formData.checklistText || ''} onChange={(e) => setFormData({...formData, checklistText: e.target.value})} />
+                </div>
               </div>
               <div style={styles.modalFooter}>
                 <button type="button" onClick={() => setIsModalOpen(false)} style={styles.cancelBtn}>Cancelar</button>
@@ -215,7 +261,8 @@ const styles = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' },
   pageTitle: { fontSize: '24px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' },
   pageSubtitle: { fontSize: '14px', color: 'var(--text-muted)' },
-  toolbar: { padding: '16px 24px', marginBottom: '24px' },
+  filterSelect: { padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'white', fontSize: '13px' },
+  toolbar: { padding: '12px 16px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' },
   searchWrapper: { display: 'flex', alignItems: 'center', gap: '12px', flex: 1, maxWidth: '400px' },
   searchInput: { width: '100%', border: 'none', fontSize: '14px', outline: 'none' },
   th: { padding: '16px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' },
@@ -223,7 +270,6 @@ const styles = {
   iconBtn: { background: 'transparent', border: 'none', color: '#94a3b8', padding: '6px', cursor: 'pointer', borderRadius: '6px', transition: '0.2s' },
   statusBadge: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' },
   statusDot: { width: '8px', height: '8px', borderRadius: '50%' },
-  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { width: '100%', maxWidth: '600px', padding: '32px', background: 'white' },
   modalHeader: { marginBottom: '24px' },
   modalTitle: { fontSize: '20px', fontWeight: '700' },

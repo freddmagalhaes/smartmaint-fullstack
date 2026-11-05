@@ -1,9 +1,21 @@
+# Nunca levar segredos para a imagem (vale para qualquer pasta)
+**/.env
+**/.env.*
+!**/.env.example
+
 **/node_modules
+**/npm-debug.log*
 dist
 build
 .git
-.env
-**/.env
-server/uploads
-lint_report.json
-docker-compose.yml
+.github
+.vscode
+.idea
+
+# Arquivos enviados e testes não fazem parte da imagem
+**/uploads
+server/tests
+*.md
+
+# Infraestrutura (Terraform) não faz parte da imagem
+infra
