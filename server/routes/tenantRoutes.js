@@ -3,7 +3,7 @@ const db = require('../db');
 const { query, assertAffected, buildUpdate } = require('../utils/routeHelpers');
 const { HttpError } = require('../utils/errorHandler');
 const { initialPassword, sendInvite } = require('../utils/passwords');
-const { assertWithinLimit } = require('../utils/plans');
+const { assertWithinLimit, withinLimit } = require('../utils/plans');
 const { audit } = require('../utils/audit');
 const {
   ROLES, TENANT_ROLES, isBackoffice, requireRole, requireBackoffice, requireMaster, tenantScope,
@@ -183,12 +183,12 @@ router.post('/users', requireRole(ROLES.ADMIN), tenantScope, async (req, res) =>
     password: password.optional().or(z.literal('')),
   }), req.body);
 
-  await assertWithinLimit(req.tenantId, 'users');
+  await assertWithinLimit(req.tenantId, 'users'); // recusa barata antes do hash; o limite de verdade é conferido na gravação
   const { hash, invite } = await initialPassword(data.password || null);
-  const result = await query(
+  const result = await withinLimit(req.tenantId, 'users', 1, (q) => q(
     'INSERT INTO users (tenant_id, name, email, role, password) VALUES (?, ?, ?, ?, ?)',
     [req.tenantId, data.name, data.email, data.role, hash]
-  );
+  ));
   const user = { id: result.insertId, name: data.name, email: data.email };
   let inviteSent = false;
   if (invite) {

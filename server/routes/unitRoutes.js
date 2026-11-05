@@ -1,7 +1,7 @@
 const express = require('express');
 const { query, assertAffected, buildUpdate } = require('../utils/routeHelpers');
 const { HttpError } = require('../utils/errorHandler');
-const { assertWithinLimit } = require('../utils/plans');
+const { withinLimit } = require('../utils/plans');
 const { audit } = require('../utils/audit');
 const { ROLES, TENANT_ROLES, requireRole, tenantScope } = require('../middleware/rbac');
 const { parse, z, text, optionalText, idParam } = require('../utils/validate');
@@ -21,8 +21,7 @@ router.get('/units', requireRole(...TENANT_ROLES), tenantScope, async (req, res)
 
 router.post('/units', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
   const d = parse(unitSchema, req.body);
-  await assertWithinLimit(req.tenantId, 'units');
-  const result = await query('INSERT INTO units (tenant_id, name, code) VALUES (?, ?, ?)', [req.tenantId, d.name, d.code ?? null]);
+  const result = await withinLimit(req.tenantId, 'units', 1, (q) => q('INSERT INTO units (tenant_id, name, code) VALUES (?, ?, ?)', [req.tenantId, d.name, d.code ?? null]));
   await audit(req, { action: 'create', entity: 'unit', entityId: result.insertId, changes: d });
   res.status(201).json({ id: result.insertId, ...d });
 });
