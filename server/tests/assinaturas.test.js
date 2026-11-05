@@ -60,6 +60,7 @@ describe('assinatura no cartão com teste grátis', () => {
   });
 
   it('não assina plano sem preço definido', async () => {
+    await db.query("UPDATE plans SET price_monthly = 0 WHERE id = 'Pro'"); // os planos comerciais já vêm com preço
     const res = await api(adminAcme).post('/api/billing/subscription').send({ method: 'card', plan_id: 'Pro' });
     assert.equal(res.status, 400);
     assert.match(res.body.error, /preço/);
@@ -83,18 +84,18 @@ describe('assinatura no cartão com teste grátis', () => {
     assert.equal((await tenant('acme')).plan_type, 'Pro');
   });
 
-  it('cartão abre o Checkout em modo assinatura com 30 dias grátis', async () => {
+  it('cartão abre o Checkout em modo assinatura com 14 dias grátis (dias do plano comercial)', async () => {
     const res = await api(adminAcme).post('/api/billing/subscription').send({ method: 'card', plan_id: 'Pro' });
     assert.equal(res.status, 201, JSON.stringify(res.body));
     assert.equal(res.body.url, 'https://checkout.stripe.test/cs_1');
-    assert.equal(res.body.trial_days, 30);
+    assert.equal(res.body.trial_days, 14);
 
     const [params] = calls['checkout.sessions.create'][0];
     assert.equal(params.mode, 'subscription');
     assert.equal(params.customer, 'cus_acme');
     assert.deepEqual(params.payment_method_types, ['card']);
-    assert.equal(params.subscription_data.trial_period_days, 30);
-    assert.deepEqual(params.subscription_data.metadata, { tenant_id: 'acme', plan_id: 'Pro', method: 'card' });
+    assert.equal(params.subscription_data.trial_period_days, 14);
+    assert.deepEqual(params.subscription_data.metadata, { tenant_id: 'acme', plan_id: 'Pro', method: 'card', cycle: 'mensal' });
     assert.deepEqual(params.line_items[0].price_data, { currency: 'brl', product: 'prod_pro', unit_amount: 19990, recurring: { interval: 'month' } });
 
     assert.equal((await tenant('acme')).stripe_customer_id, 'cus_acme');

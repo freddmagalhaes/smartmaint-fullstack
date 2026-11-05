@@ -21,6 +21,8 @@ describe('unidades fabris', () => {
   let segundaUnidade;
 
   it('administrador cria unidade e equipamento nela; filtro por unidade funciona', async () => {
+    // Este bloco trata de unidades, não de limites: o plano Pro comercial permite só 1 unidade
+    await db.query("UPDATE plans SET max_units = NULL WHERE id = 'Pro'");
     const admin = api(tokens.admin);
     const unit = await admin.post('/api/units').send({ name: 'Planta Betim', code: 'BET' });
     assert.equal(unit.status, 201);
@@ -133,7 +135,7 @@ describe('limites por plano', () => {
     const res = await api(tokens.globex).post('/api/users').send({ name: 'X', email: 'x@globex.com', role: 'Usuário' });
     assert.equal(res.status, 403);
     assert.equal(res.body.code, 'PLAN_LIMIT');
-    assert.match(res.body.error, /Starter/);
+    assert.match(res.body.error, /Essencial/); // nome comercial do plano Starter
   });
 
   it('limite nulo significa ilimitado e Root edita os limites', async () => {

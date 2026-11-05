@@ -14,6 +14,22 @@ const METHODS = {
 };
 const TRIAL_METHODS = ['card', 'pix_automatico'];
 
+/** Recursos que o plano inclui (colunas has_* de /api/plans). */
+const featureText = (p) => {
+  const included = [['has_fmea', 'FMEA'], ['has_simulator', 'simulador'], ['has_import', 'importação']].filter(([k]) => p[k]).map(([, l]) => l);
+  if (included.length === 3) return 'FMEA, simulador e importação por planilha';
+  return included.length ? `Inclui ${included.join(' e ')}` : 'Sem FMEA, simulador e importação';
+};
+
+/** Preço do plano no ciclo escolhido: mensal ou o anual (mostrado por mês, com o total do ano à parte). */
+const priceFor = (p, cycle) => {
+  const annual = Number(p.price_annual) > 0;
+  if (cycle === 'anual' && annual) return { main: `${formatCurrency(Math.round(Number(p.price_annual) / 12))}/mês`, note: `cobrado ${formatCurrency(p.price_annual)} por ano` };
+  if (Number(p.price_monthly) > 0) return { main: `${formatCurrency(p.price_monthly)}/mês`, note: null };
+  return { main: 'Sob consulta', note: null };
+};
+const canCharge = (p, cycle) => (cycle === 'anual' ? Number(p.price_annual) > 0 : Number(p.price_monthly) > 0);
+
 const limitText = (n, singular, plural) => (n === null || n === undefined ? `${plural} ilimitados` : `${n} ${n === 1 ? singular : plural}`);
 
 const STATUS_LABELS = {
@@ -34,7 +50,7 @@ const BillingTab = () => {
   const [plans, setPlans] = useState([]);
   const [usage, setUsage] = useState(null);
   const [invoices, setInvoices] = useState([]);
-  const [choice, setChoice] = useState({ plan_id: '', method: 'card' });
+  const [choice, setChoice] = useState({ plan_id: '', method: 'card', cycle: 'mensal' });
   const [busy, setBusy] = useState(null);
 
   const scoped = useCallback((path) => withQuery(path, { tenant_id: activeTenant }), [activeTenant]);
@@ -85,7 +101,9 @@ const BillingTab = () => {
   });
 
   const subscribe = () => run('subscribe', async () => {
-    const data = await apiFetch(scoped('/api/billing/subscription'), { method: 'POST', body: choice });
+    // Cobrança anual existe só no cartão
+    const body = { ...choice, cycle: choice.method === 'card' ? choice.cycle : 'mensal' };
+    const data = await apiFetch(scoped('/api/billing/subscription'), { method: 'POST', body });
     if (data.url) {
       window.location.href = data.url;
       return;
@@ -117,12 +135,14 @@ const BillingTab = () => {
   const openInvoices = invoices.filter((i) => i.status !== 'Paga');
   const isAutomatic = TRIAL_METHODS.includes(subscription.billing_method);
   const trialOffered = subscription.trial_available && TRIAL_METHODS.includes(choice.method);
+  const cycle = choice.method === 'card' ? choice.cycle : 'mensal';
+  const activeCycle = subscription.billing_cycle === 'anual' ? 'anual' : 'mensal';
 
   return (
     <div className="fade-in">
       <div style={styles.sectionHeader}>
         <h3 style={styles.title}>Plano e Faturamento</h3>
-        <p style={styles.muted}>Assinatura mensal do SmartMaint e histórico de pagamentos.</p>
+        <p style={styles.muted}>Assinatura do SmartMaint e histórico de pagamentos.</p>
       </div>
 
       {isPending && (
@@ -143,7 +163,9 @@ const BillingTab = () => {
             <div>
               <h4 style={styles.planTitle}>Plano {subscription.plan_name}</h4>
               <p style={styles.muted}>
-                {formatCurrency(subscription.amount)}/mês · {METHODS[subscription.billing_method]?.label || subscription.billing_method}
+                {activeCycle === 'anual'
+                  ? `${formatCurrency(subscription.amount)}/ano (${formatCurrency(subscription.monthly_equivalent)}/mês)`
+                  : `${formatCurrency(subscription.amount)}/mês`} · {METHODS[subscription.billing_method]?.label || subscription.billing_method}
               </p>
             </div>
             <span style={{ ...styles.badge, background: subscription.subscription_status === 'past_due' ? 'var(--danger)' : 'var(--success)' }}>
@@ -152,7 +174,7 @@ const BillingTab = () => {
           </div>
 
           {subscription.subscription_status === 'trialing' && subscription.trial_ends_at && (
-            <p style={styles.info}>Teste grátis até {formatDate(subscription.trial_ends_at)}. Depois disso, a mensalidade é cobrada automaticamente.</p>
+            <p style={styles.info}>Teste grátis até {formatDate(subscription.trial_ends_at)}. Depois disso, {activeCycle === 'anual' ? 'a anuidade' : 'a mensalidade'} é cobrada automaticamente.</p>
           )}
           {subscription.cancel_at_period_end && (
             <p style={styles.notice}>Cancelamento agendado: o acesso continua até {formatDate(subscription.current_period_end)}.</p>
@@ -168,8 +190,8 @@ const BillingTab = () => {
               <span style={styles.label}>Trocar plano</span>
               <select style={styles.select} value={subscription.plan_id} disabled={busy === 'plan'} onChange={(e) => changePlan(e.target.value)} aria-label="Trocar plano">
                 {plans.map((p) => (
-                  <option key={p.id} value={p.id} disabled={!(Number(p.price_monthly) > 0) && p.id !== subscription.plan_id}>
-                    {p.name} · {Number(p.price_monthly) > 0 ? `${formatCurrency(p.price_monthly)}/mês` : 'sob consulta'}
+                  <option key={p.id} value={p.id} disabled={!canCharge(p, activeCycle) && p.id !== subscription.plan_id}>
+                    {p.name} · {canCharge(p, activeCycle) ? (activeCycle === 'anual' ? `${formatCurrency(p.price_annual)}/ano` : `${formatCurrency(p.price_monthly)}/mês`) : 'sob consulta'}
                   </option>
                 ))}
               </select>
@@ -197,10 +219,12 @@ const BillingTab = () => {
                 aria-pressed={choice.plan_id === p.id}
               >
                 <strong>{p.name}</strong>
-                <span style={styles.price}>{Number(p.price_monthly) > 0 ? `${formatCurrency(p.price_monthly)}/mês` : 'Sob consulta'}</span>
+                <span style={styles.price}>{priceFor(p, cycle).main}</span>
+                {priceFor(p, cycle).note && <span style={styles.small}>{priceFor(p, cycle).note}</span>}
                 <span style={styles.small}>
                   {limitText(p.max_users, 'usuário', 'usuários')} · {limitText(p.max_equipments, 'equipamento', 'equipamentos')} · {limitText(p.max_units, 'unidade', 'unidades')}
                 </span>
+                <span style={styles.small}>{featureText(p)}</span>
               </button>
             ))}
           </div>
@@ -227,10 +251,30 @@ const BillingTab = () => {
             })}
           </div>
 
+          {choice.method === 'card' && (
+            <>
+              <h4 style={{ ...styles.planTitle, marginTop: '24px' }}>Ciclo de cobrança</h4>
+              <div style={styles.methodGrid} role="group" aria-label="Ciclo de cobrança">
+                {[['mensal', 'Mensal', 'Cobrado todo mês'], ['anual', 'Anual · 2 meses grátis', 'Cobrado uma vez por ano']].map(([value, label, desc]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setChoice({ ...choice, cycle: value })}
+                    style={{ ...styles.option, ...(choice.cycle === value ? styles.optionActive : {}) }}
+                    aria-pressed={choice.cycle === value}
+                  >
+                    <strong>{label}</strong>
+                    <span style={styles.small}>{desc}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
           <button
             className="btn-primary"
             style={{ width: '100%', justifyContent: 'center', marginTop: '24px' }}
-            disabled={!!busy || !subscription.online_payments || !plan || !(Number(plan.price_monthly) > 0)}
+            disabled={!!busy || !subscription.online_payments || !plan || !canCharge(plan, cycle)}
             onClick={subscribe}
           >
             {busy === 'subscribe' ? 'Aguarde...' : trialOffered ? `Começar teste grátis de ${subscription.trial_days} dias` : 'Assinar'}

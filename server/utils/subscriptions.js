@@ -57,6 +57,22 @@ const monthlyAmount = (tenant, plan) => {
   return amount;
 };
 
+const CYCLES = ['mensal', 'anual'];
+const cycleOf = (tenant) => (tenant.billing_cycle === 'anual' ? 'anual' : 'mensal');
+
+/**
+ * Valor anual (total cobrado por ano): o preço anual do plano ou, para contrato negociado, 10 mensalidades
+ * (mesma regra dos "2 meses grátis" do preço de tabela).
+ */
+const annualAmount = (tenant, plan) => {
+  const amount = Number(tenant.valor_mensal) > 0 ? Math.round(Number(tenant.valor_mensal) * 10 * 100) / 100 : Number(plan.price_annual);
+  if (!(amount > 0)) throw new HttpError(400, `O plano ${plan.name} não tem cobrança anual disponível.`);
+  return amount;
+};
+
+/** Valor de cada cobrança no ciclo escolhido. */
+const chargeAmount = (tenant, plan, cycle) => (cycle === 'anual' ? annualAmount(tenant, plan) : monthlyAmount(tenant, plan));
+
 const hasLiveSubscription = (tenant) => Boolean(
   (tenant.stripe_subscription_id && !['canceled', 'incomplete_expired'].includes(tenant.subscription_status))
   || MANUAL.includes(tenant.billing_method)
@@ -69,7 +85,10 @@ const getSubscription = async (tenantId) => {
   return {
     plan_id: tenant.plan_type,
     plan_name: plan?.name || tenant.plan_type,
-    amount: plan ? (Number(tenant.valor_mensal) > 0 ? Number(tenant.valor_mensal) : Number(plan.price_monthly)) : null,
+    billing_cycle: cycleOf(tenant),
+    // valor de cada cobrança no ciclo atual (mensal ou o total do ano) e o equivalente por mês
+    amount: plan ? (() => { try { return chargeAmount(tenant, plan, cycleOf(tenant)); } catch { return null; } })() : null,
+    monthly_equivalent: plan ? (() => { try { const c = chargeAmount(tenant, plan, cycleOf(tenant)); return cycleOf(tenant) === 'anual' ? Math.round(c / 12) : c; } catch { return null; } })() : null,
     billing_method: tenant.billing_method,
     subscription_status: tenant.subscription_status,
     active: hasLiveSubscription(tenant),
@@ -115,11 +134,11 @@ const ensureProduct = async (plan) => {
   return product.id;
 };
 
-const monthlyPrice = (productId, amount) => ({
+const recurringPrice = (productId, amount, cycle) => ({
   currency: 'brl',
   product: productId,
   unit_amount: Math.round(amount * 100), // Stripe usa centavos
-  recurring: { interval: 'month' },
+  recurring: { interval: cycle === 'anual' ? 'year' : 'month' },
 });
 
 /** Não deixa trocar para um plano menor que o uso atual (usuários, equipamentos, unidades). */
@@ -147,20 +166,23 @@ const createManualInvoice = async (tenant, plan, period, dueDate) => {
  * Inicia a assinatura. Cartão e Pix Automático devolvem a URL do Checkout do Stripe (onde o
  * cliente cadastra o meio de pagamento); boleto e Pix geram a primeira fatura na hora.
  */
-const startSubscription = async (tenantId, { method, planId }) => {
+const startSubscription = async (tenantId, { method, planId, cycle = 'mensal' }) => {
   if (!availableMethods().includes(method)) throw new HttpError(400, 'Forma de pagamento indisponível');
+  if (!CYCLES.includes(cycle)) throw new HttpError(400, 'Ciclo de cobrança inválido');
+  // Boleto/Pix têm fatura mensal gerada pelo SmartMaint, e o Pix Automático é mensal: o anual é só no cartão
+  if (cycle === 'anual' && method !== 'card') throw new HttpError(400, 'A cobrança anual está disponível apenas no cartão de crédito');
   requireStripe();
   const tenant = await getTenant(tenantId);
   if (hasLiveSubscription(tenant)) throw new HttpError(409, 'Este cliente já tem uma assinatura ativa. Use a troca de plano ou de forma de pagamento.');
   const plan = await getPlan(planId || tenant.plan_type);
   await assertFitsPlan(tenantId, plan);
-  const amount = monthlyAmount(tenant, plan);
+  const amount = chargeAmount(tenant, plan, cycle);
 
   if (MANUAL.includes(method)) {
     const today = brDate(new Date());
     const billingDay = Math.min(Number(today.slice(8, 10)), 28);
     await query(
-      `UPDATE tenants SET billing_method = ?, billing_day = ?, plan_type = ?, subscription_status = 'active',
+      `UPDATE tenants SET billing_method = ?, billing_day = ?, plan_type = ?, billing_cycle = 'mensal', subscription_status = 'active',
          stripe_subscription_id = NULL, trial_ends_at = NULL, current_period_end = NULL, cancel_at_period_end = FALSE WHERE id = ?`,
       [method, billingDay, plan.id, tenantId]
     );
@@ -171,12 +193,12 @@ const startSubscription = async (tenantId, { method, planId }) => {
   const customer = await ensureCustomer(tenant);
   const product = await ensureProduct(plan);
   const trialDays = !tenant.trial_used && plan.trial_days > 0 ? plan.trial_days : 0;
-  const metadata = { tenant_id: tenantId, plan_id: plan.id, method };
+  const metadata = { tenant_id: tenantId, plan_id: plan.id, method, cycle };
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     customer,
     payment_method_types: [method === 'card' ? 'card' : 'pix'],
-    line_items: [{ price_data: monthlyPrice(product, amount), quantity: 1 }],
+    line_items: [{ price_data: recurringPrice(product, amount, cycle), quantity: 1 }],
     subscription_data: { metadata, ...(trialDays && { trial_period_days: trialDays }) },
     metadata,
     client_reference_id: tenantId,
@@ -184,7 +206,7 @@ const startSubscription = async (tenantId, { method, planId }) => {
     success_url: `${config.frontendUrl}/settings?tab=billing&subscribed=true`,
     cancel_url: `${config.frontendUrl}/settings?tab=billing&canceled=true`,
   });
-  return { url: session.url, trial_days: trialDays };
+  return { url: session.url, trial_days: trialDays, cycle, amount };
 };
 
 /** Troca de plano. No Stripe a diferença do mês é cobrada ou creditada proporcionalmente. */
@@ -195,20 +217,21 @@ const changePlan = async (tenantId, planId) => {
   const plan = await getPlan(planId);
   if (plan.id === tenant.plan_type) throw new HttpError(400, 'O cliente já está neste plano');
   await assertFitsPlan(tenantId, plan);
-  const amount = monthlyAmount(tenant, plan);
+  const cycle = cycleOf(tenant); // a troca de plano mantém o ciclo (mensal/anual) da assinatura
+  const amount = chargeAmount(tenant, plan, cycle);
 
   if (AUTOMATIC.includes(tenant.billing_method) && tenant.stripe_subscription_id) {
     requireStripe();
     const subscription = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
     await stripe.subscriptions.update(tenant.stripe_subscription_id, {
-      items: [{ id: subscription.items.data[0].id, price_data: monthlyPrice(await ensureProduct(plan), amount) }],
+      items: [{ id: subscription.items.data[0].id, price_data: recurringPrice(await ensureProduct(plan), amount, cycle) }],
       proration_behavior: 'create_prorations',
       metadata: { ...subscription.metadata, plan_id: plan.id },
     });
   }
   // Boleto/Pix: o novo valor vale a partir da próxima fatura
   await query('UPDATE tenants SET plan_type = ? WHERE id = ?', [plan.id, tenantId]);
-  return { plan_id: plan.id, amount };
+  return { plan_id: plan.id, amount, cycle };
 };
 
 /** Cancela no fim do período pago (cartão/Pix Automático) ou para de gerar faturas (boleto/Pix). */
@@ -271,12 +294,15 @@ const syncSubscription = async (subscriptionId, hintTenantId) => {
   await db.transaction(async (q) => {
     await q(
       `UPDATE tenants SET stripe_customer_id = COALESCE(stripe_customer_id, ?), stripe_subscription_id = ?, subscription_status = ?,
-         billing_method = ?, plan_type = COALESCE(?, plan_type), trial_ends_at = ?, current_period_end = ?,
-         cancel_at_period_end = ?, trial_used = (trial_used OR ?)
+         billing_method = ?, billing_cycle = COALESCE(?, billing_cycle), plan_type = COALESCE(?, plan_type),
+         trial_ends_at = ?, current_period_end = ?, cancel_at_period_end = ?, trial_used = (trial_used OR ?)
        WHERE id = ?`,
       [
         customerId, sub.id, sub.status,
-        ended ? null : (sub.metadata?.method || tenant.billing_method || 'card'), sub.metadata?.plan_id || null,
+        ended ? null : (sub.metadata?.method || tenant.billing_method || 'card'),
+        // o ciclo vem do intervalo do preço no Stripe (a verdade), não da metadata
+        sub.items?.data?.[0]?.price?.recurring?.interval === 'year' ? 'anual' : sub.items?.data?.[0]?.price?.recurring?.interval === 'month' ? 'mensal' : null,
+        sub.metadata?.plan_id || null,
         fromUnix(sub.trial_end), fromUnix(periodEnd), Boolean(sub.cancel_at_period_end), Boolean(sub.trial_end), tenant.id,
       ]
     );

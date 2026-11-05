@@ -10,6 +10,7 @@ const migrations = [
   require('./007_lgpd_cadastro'),
   require('./008_relatorios_onboarding'),
   require('./009_qrcode_offline'),
+  require('./010_planos_comerciais'),
 ];
 
 const helpers = (q) => ({

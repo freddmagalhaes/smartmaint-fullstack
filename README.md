@@ -47,7 +47,22 @@ As permissões são aplicadas no backend (a interface apenas esconde o que o per
 
 ## 📐 Planos e limites
 
-Os planos (`Starter`, `Pro`, `Enterprise`) ficam na tabela `plans` e são editados pelo Root em **Backoffice → Planos**: preço mensal, dias de teste e limites de usuários, equipamentos e unidades (em branco = ilimitado). Ao atingir o limite, a criação é bloqueada com a mensagem do plano (`403 PLAN_LIMIT`), e o administrador do cliente vê o uso em **Configurações → Faturamento**. Os valores iniciais são provisórios.
+Os planos ficam na tabela `plans` e o Root os edita em **Backoffice → Planos** (preços, limites, dias de teste e recursos). Os valores iniciais (migration `010_planos_comerciais`) são a tabela comercial:
+
+| Plano (`id`) | Mensal | Anual (por ano) | Usuários | Equipamentos | Unidades | FMEA, simulador e importação |
+|---|---|---|---|---|---|---|
+| **Essencial** (`Starter`) | R$ 297 | R$ 2.964 (R$ 247/mês) | 3 | 50 | 1 | não |
+| **Profissional** (`Pro`) | R$ 697 | R$ 6.972 (R$ 581/mês) | 10 | 300 | 1 | sim |
+| **Industrial** (`Industrial`) | R$ 1.697 | R$ 16.968 (R$ 1.414/mês) | 30 | 1.000 | 3 | sim |
+| **Corporativo** (`Enterprise`) | sob consulta | – | ilimitado | ilimitado | ilimitado | sim |
+
+- Os `id` técnicos (`Starter`, `Pro`, `Enterprise`) **não mudam**: o Stripe guarda o `plan_id` nos metadados das assinaturas. O cliente só vê o nome.
+- O anual é 10/12 do mensal (2 meses grátis). Teste grátis: 14 dias nos planos pagos.
+- A migration só reescreve os planos semeados se ainda estiverem como foram criados: o que o Root já editou é preservado.
+- **Limites:** ao atingir o limite, a criação é bloqueada com `403 PLAN_LIMIT`; o administrador vê o uso em **Configurações → Faturamento**.
+- **Recursos por plano:** FMEA e importação por planilha são bloqueados no servidor (`403 PLAN_FEATURE`) quando o plano não os inclui. O **simulador R(t)** é calculado no navegador, então só a interface o bloqueia (cadeado e convite ao upgrade): o servidor não consegue impedi-lo.
+- `GET /api/plan/features` informa os recursos do plano a qualquer perfil do cliente (a interface usa para mostrar cadeados).
+- Cliente com plano que não existe mais em `plans` não sofre nenhuma restrição (nunca trava clientes antigos).
 
 ## 💳 Assinatura e cobrança
 
@@ -55,7 +70,7 @@ O administrador do cliente assina em **Configurações → Faturamento**, escolh
 
 | Forma | Como cobra | Teste grátis |
 |---|---|---|
-| Cartão de crédito | Assinatura no Stripe, cobrada automaticamente todo mês | Sim (dias do plano, uma vez por cliente) |
+| Cartão de crédito | Assinatura no Stripe, cobrada automaticamente todo mês **ou uma vez por ano** (2 meses grátis) | Sim (dias do plano, uma vez por cliente) |
 | Pix Automático | Assinatura no Stripe com autorização no app do banco | Sim. Fica oculto até `STRIPE_PIX_AUTOMATICO=true` |
 | Boleto | O SmartMaint gera a fatura do mês `BILLING_INVOICE_LEAD_DAYS` antes do vencimento; o cliente paga pelo Checkout | Não |
 | Pix | Igual ao boleto, com QR Code Pix | Não |
@@ -63,7 +78,8 @@ O administrador do cliente assina em **Configurações → Faturamento**, escolh
 - O valor é o `valor_mensal` negociado no contrato do cliente ou, se vazio, o preço do plano.
 - Cada cobrança do Stripe vira uma fatura no histórico; fatura paga entra na fila da NFS-e.
 - Cartão recusado: a fatura fica "Atrasada", o Stripe tenta cobrar de novo e o cliente pode trocar o cartão em **Gerenciar pagamento** (portal do Stripe). Depois de `BILLING_GRACE_DAYS`, o acesso é bloqueado.
-- Troca de plano: no cartão a diferença é proporcional; no boleto/Pix vale a partir da próxima fatura. Não é possível trocar para um plano menor que o uso atual.
+- **Cobrança anual:** só no cartão (`cycle: "anual"` em `POST /api/billing/subscription`). Boleto, Pix e Pix Automático são sempre mensais. O valor é o preço anual do plano; em contrato negociado (`valor_mensal`), o anual vale 10 mensalidades. O ciclo real vem do intervalo do preço no Stripe (webhook) e é guardado em `tenants.billing_cycle`.
+- Troca de plano: no cartão a diferença é proporcional e **o ciclo (mensal/anual) é mantido**; no boleto/Pix vale a partir da próxima fatura. Não é possível trocar para um plano menor que o uso atual. Trocar de mensal para anual (ou o inverso) ainda não é feito pela interface.
 - Cancelamento: no cartão vale no fim do período pago; no boleto/Pix as faturas param de ser geradas.
 
 No Stripe: cadastre o webhook `https://SEU_DOMINIO/api/billing/webhook` com os eventos `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.trial_will_end`, `invoice.paid` e `invoice.payment_failed`. Em **Settings → Billing → Customer portal**, ative a troca de forma de pagamento e o cancelamento. Em **Settings → Billing → Subscriptions and emails**, ative as novas tentativas automáticas (Smart Retries) e os e-mails de cartão recusado.

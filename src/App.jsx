@@ -2,6 +2,8 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider, ROLES } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
+import { PlanFeaturesProvider } from './contexts/PlanFeaturesContext';
+import FeatureGate from './components/FeatureGate';
 import { ConfirmProvider } from './components/ConfirmDialog';
 import { Toaster } from 'sonner';
 import ProtectedRoute, { PageLoader, HomeRedirect } from './components/ProtectedRoute';
@@ -43,9 +45,9 @@ const APP_ROUTES = [
   { path: '/preventive', element: <PreventiveMaintenance />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   { path: '/inventory', element: <Inventory />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   { path: '/failures', element: <Failures />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
-  { path: '/fmea', element: <FMEA />, roles: [ROOT, BACKOFFICE, ADMIN] },
+  { path: '/fmea', element: <FMEA />, roles: [ROOT, BACKOFFICE, ADMIN], feature: 'fmea' },
   { path: '/reports', element: <Reports />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
-  { path: '/simulator', element: <Simulator />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
+  { path: '/simulator', element: <Simulator />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER], feature: 'simulator' },
   // Configurações: todos (aba "Meu Perfil"); as demais abas são filtradas por perfil
   { path: '/settings', element: <Settings />, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER, USER] },
 ];
@@ -55,6 +57,7 @@ function App() {
     <ErrorBoundary>
       <AuthProvider>
         <ConfirmProvider>
+          <PlanFeaturesProvider>
           <DataProvider>
             <Router>
               <Toaster position="top-right" richColors />
@@ -67,13 +70,13 @@ function App() {
                   <Route path="/termos" element={<Terms />} />
                   <Route path="/privacidade" element={<Privacy />} />
 
-                  {APP_ROUTES.map(({ path, element, roles }) => (
+                  {APP_ROUTES.map(({ path, element, roles, feature }) => (
                     <Route
                       key={path}
                       path={path}
                       element={
                         <ProtectedRoute allowedRoles={roles}>
-                          <Layout>{element}</Layout>
+                          <Layout>{feature ? <FeatureGate feature={feature}>{element}</FeatureGate> : element}</Layout>
                         </ProtectedRoute>
                       }
                     />
@@ -95,6 +98,7 @@ function App() {
               </Suspense>
             </Router>
           </DataProvider>
+          </PlanFeaturesProvider>
         </ConfirmProvider>
       </AuthProvider>
     </ErrorBoundary>

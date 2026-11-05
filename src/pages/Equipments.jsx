@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { 
   Plus, Search, 
-  Calendar, Hash, Tag, Activity, X, Trash2, Edit2, Cpu, FileSpreadsheet, QrCode
+  Calendar, Hash, Tag, Activity, X, Trash2, Edit2, Cpu, FileSpreadsheet, QrCode, Lock
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ImportEquipmentsModal from '../components/ImportEquipmentsModal';
 import { toast } from 'sonner';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
+import { usePlanFeatures, planHas } from '../contexts/PlanFeaturesContext';
 import { apiFetch, withQuery } from '../api/client';
 import { formatDate, todayISO, formatCurrency } from '../utils/format';
 import { usePagedList, useDebounced } from '../hooks/usePagedList';
@@ -16,6 +17,7 @@ import Pagination from '../components/Pagination';
 const Equipments = () => {
   const { units, activeUnit, addEquipment, updateEquipment, deleteEquipment } = useData();
   const { activeTenant } = useAuth();
+  const planFeatures = usePlanFeatures();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -96,8 +98,10 @@ const Equipments = () => {
             <QrCode size={18} />
             Etiquetas QR
           </Link>
-          <button type="button" style={styles.secondaryBtn} onClick={() => setIsImportOpen(true)}>
-            <FileSpreadsheet size={18} />
+          <button type="button" style={styles.secondaryBtn} onClick={() => (planHas(planFeatures, 'import')
+            ? setIsImportOpen(true)
+            : toast.info('A importação por planilha está disponível a partir do plano Profissional.'))}>
+            {planHas(planFeatures, 'import') ? <FileSpreadsheet size={18} /> : <Lock size={16} />}
             Importar planilha
           </button>
           <button className="btn-primary" onClick={handleOpenAdd}>

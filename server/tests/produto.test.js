@@ -259,6 +259,7 @@ describe('importação de equipamentos', () => {
   });
 
   it('com várias unidades, usa a unidade escolhida na tela para linhas sem unidade', async () => {
+    await db.query("UPDATE plans SET max_units = NULL WHERE id = 'Pro'"); // o teste é sobre unidades, não sobre limites
     const admin = api(tokens.admin);
     const unit = await admin.post('/api/units').send({ name: 'Planta Betim' });
     const semUnidade = await admin.post('/api/equipments/import').send({ dry_run: true, rows: [{ name: 'Torno 1' }] });
@@ -271,9 +272,10 @@ describe('importação de equipamentos', () => {
 
   it('respeita o limite do plano', async () => {
     await db.query("UPDATE tenants SET plan_type = 'Starter' WHERE id = 'globex'");
-    await db.query("UPDATE plans SET max_equipments = 2 WHERE id = 'Starter'");
+    // O plano Essencial (Starter) não inclui importação: libera aqui para testar só o limite de equipamentos
+    await db.query("UPDATE plans SET max_equipments = 2, has_import = TRUE WHERE id = 'Starter'");
     const res = await api(tokens.globex).post('/api/equipments/import').send({ rows: [{ name: 'A' }, { name: 'B' }] });
     assert.equal(res.status, 422);
-    assert.match(res.body.errors[0].message, /Starter/);
+    assert.match(res.body.errors[0].message, /Essencial/);
   });
 });
