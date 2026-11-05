@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { query, getTenantId } = require('../utils/routeHelpers');
+const { query, getTenantId, equipmentBelongsToTenant } = require('../utils/routeHelpers');
 const { handleQueryError } = require('../utils/errorHandler');
 const authMiddleware = require('../middleware/auth');
 
@@ -19,6 +19,7 @@ router.post('/work-orders', async (req, res) => {
   const tenant_id = getTenantId(req);
   const { equipment_id, titulo, tipo, prioridade, status, responsavel, data_criacao } = req.body;
   try {
+    if (!(await equipmentBelongsToTenant(equipment_id, tenant_id))) return res.status(400).json({ error: 'Equipamento inválido' });
     const result = await query(
       'INSERT INTO work_orders (tenant_id, equipment_id, titulo, tipo, prioridade, status, responsavel, data_criacao) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [tenant_id, equipment_id, titulo, tipo, prioridade, status, responsavel, data_criacao || new Date().toISOString().split('T')[0]]

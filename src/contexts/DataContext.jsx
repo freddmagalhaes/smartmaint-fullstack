@@ -1,11 +1,13 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { toast } from 'sonner';
+import { usePlan } from './PlanContext';
 
 const DataContext = createContext();
 
 export const DataProvider = ({ children }) => {
   const { activeTenant, token } = useAuth();
+  const { refresh: refreshPlan } = usePlan();
   
   const [equipments, setEquipments] = useState([]);
   const [failures, setFailures] = useState([]);
@@ -70,7 +72,11 @@ export const DataProvider = ({ children }) => {
       if (res.ok) {
         toast.success('Equipamento adicionado!');
         fetchData();
-      } else throw new Error();
+        refreshPlan();
+      } else {
+        const error = await res.json().catch(() => ({}));
+        toast.error(error.code === 'PLAN_LIMIT_ASSETS' ? error.error : 'Erro ao adicionar equipamento.');
+      }
     } catch { toast.error('Erro ao adicionar equipamento.'); }
   };
 
@@ -205,13 +211,16 @@ export const DataProvider = ({ children }) => {
         body: JSON.stringify({ ...data, tenant_id: activeTenant })
       });
       if (res.ok) {
+        const created = await res.json();
         toast.success('Membro da equipe adicionado!');
         fetchData();
-      } else {
-        const error = await res.json();
-        toast.error(error.error || 'Erro ao adicionar membro.');
+        refreshPlan();
+        return created; // inclui temp_password quando a senha foi gerada pelo servidor
       }
+      const error = await res.json().catch(() => ({}));
+      toast.error(error.error || 'Erro ao adicionar membro.');
     } catch { toast.error('Erro ao adicionar membro.'); }
+    return null;
   };
 
   const addInventoryItem = async (data) => {

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { query, getTenantId } = require('../utils/routeHelpers');
+const { query, getTenantId, equipmentBelongsToTenant } = require('../utils/routeHelpers');
 const { handleQueryError } = require('../utils/errorHandler');
 const authMiddleware = require('../middleware/auth');
 
@@ -10,7 +10,7 @@ router.use(authMiddleware);
 router.get('/preventive-plans', async (req, res) => {
   const tenant_id = getTenantId(req);
   try {
-    const rows = await query('SELECT p.*, e.name as equipment_name FROM preventive_plans p JOIN equipments e ON p.equipment_id = e.id WHERE p.tenant_id = ?', [tenant_id]);
+    const rows = await query('SELECT p.*, e.name as equipment_name FROM preventive_plans p JOIN equipments e ON p.equipment_id = e.id AND e.tenant_id = p.tenant_id WHERE p.tenant_id = ?', [tenant_id]);
     res.json(rows);
   } catch (err) { handleQueryError(res, err, 'Erro ao listar planos preventivos'); }
 });
@@ -19,6 +19,7 @@ router.post('/preventive-plans', async (req, res) => {
   const tenant_id = getTenantId(req);
   const { equipment_id, title, description, interval_days, status } = req.body;
   try {
+    if (!(await equipmentBelongsToTenant(equipment_id, tenant_id))) return res.status(400).json({ error: 'Equipamento inválido' });
     const result = await query(
       'INSERT INTO preventive_plans (tenant_id, equipment_id, title, description, interval_days, next_due, status) VALUES (?, ?, ?, ?, ?, DATE_ADD(CURRENT_DATE, INTERVAL ? DAY), ?)',
       [tenant_id, equipment_id, title, description, interval_days, interval_days, status || 'Ativo']

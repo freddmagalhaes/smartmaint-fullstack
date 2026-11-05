@@ -7,7 +7,7 @@ CREATE TABLE tenants (
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     status ENUM('Ativo', 'Inadimplente', 'Cancelado', 'Trial') DEFAULT 'Ativo',
-    plan_type VARCHAR(50) DEFAULT 'Pro',
+    plan_type VARCHAR(50) DEFAULT 'Profissional',
     contact_email VARCHAR(255),
     contact_phone VARCHAR(50),
     contrato_inicio DATE,
@@ -15,6 +15,15 @@ CREATE TABLE tenants (
     renovacao_auto BOOLEAN DEFAULT TRUE,
     valor_mensal DECIMAL(10,2) DEFAULT 0,
     stripe_customer_id VARCHAR(100),
+    trial_ends_at DATETIME NULL,
+    extra_assets INT NOT NULL DEFAULT 0,
+    extra_users INT NOT NULL DEFAULT 0,
+    stripe_subscription_id VARCHAR(100) NULL,
+    subscription_status VARCHAR(30) NULL,
+    billing_cycle ENUM('mensal', 'anual') NULL,
+    current_period_end DATETIME NULL,
+    cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
+    subscription_event_at BIGINT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -26,6 +35,7 @@ CREATE TABLE invoices (
     vencimento DATE NOT NULL,
     status ENUM('Paga', 'Pendente', 'Atrasada') DEFAULT 'Pendente',
     mes_ref VARCHAR(20) NOT NULL,
+    stripe_invoice_id VARCHAR(100) NULL UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
 );
@@ -37,10 +47,11 @@ CREATE TABLE users (
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
-    role ENUM('Dono', 'Administrador', 'Usuário') NOT NULL,
+    role ENUM('Dono', 'Administrador', 'Usuário', 'Suporte') NOT NULL,
     is_master BOOLEAN DEFAULT FALSE,
     reset_token VARCHAR(255),
     reset_token_expiry DATETIME,
+    terms_accepted_at DATETIME NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE SET NULL
 );
@@ -146,10 +157,11 @@ CREATE TABLE preventive_plans (
     FOREIGN KEY (equipment_id) REFERENCES equipments(id) ON DELETE CASCADE
 );
 
--- Inserção de Dados Iniciais (Seed)
-INSERT INTO tenants (id, name) VALUES ('delp', 'DELP Engenharia'), ('stellantis', 'Stellantis');
+-- Sem dados iniciais: crie o primeiro usuário master com `npm run create-master` (veja o README).
 
-INSERT INTO users (tenant_id, name, email, password, role, is_master) VALUES 
-(NULL, 'Master', 'master@smartmaint.com', '$2b$10$a70zVnmJjbDO1YgAYyToGuNwrkOpvZSs0wPaiR3r.UzgpHXv1UwCu', 'Dono', TRUE),
-('delp', 'Carlos (Dono)', 'dono@delp.com.br', '$2b$10$a70zVnmJjbDO1YgAYyToGuNwrkOpvZSs0wPaiR3r.UzgpHXv1UwCu', 'Administrador', FALSE),
-('stellantis', 'Julia (Dona)', 'dono@stellantis.com', '$2b$10$a70zVnmJjbDO1YgAYyToGuNwrkOpvZSs0wPaiR3r.UzgpHXv1UwCu', 'Administrador', FALSE);
+-- Eventos do Stripe já processados (idempotência do webhook)
+CREATE TABLE stripe_events (
+    id VARCHAR(100) PRIMARY KEY,
+    type VARCHAR(100) NOT NULL,
+    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

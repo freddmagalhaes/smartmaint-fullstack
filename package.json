@@ -9,13 +9,16 @@
     "postinstall": "cd server && npm install",
     "start": "node server/index.js",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:unit": "node --test src/utils/*.test.js"
   },
   "dependencies": {
     "lucide-react": "^1.11.0",
+    "qrcode": "^1.5.4",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-router-dom": "^7.14.2",
+    "read-excel-file": "^9.3.14",
     "recharts": "^3.8.1",
     "sonner": "^2.0.7"
   },
@@ -28,6 +31,8 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
-    "vite": "^8.0.10"
+    "vite": "^8.0.10",
+    "vite-plugin-pwa": "^2.0.0",
+    "workbox-build": "^7.4.1"
   }
 }

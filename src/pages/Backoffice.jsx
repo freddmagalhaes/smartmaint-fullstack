@@ -6,6 +6,7 @@ import {
   CheckCircle2, XCircle, ExternalLink, RefreshCw, X, Trash2, DollarSign, FileText
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import TempPasswordModal from '../components/TempPasswordModal';
 
 const Backoffice = () => {
   const { user, token, switchTenant } = useAuth();
@@ -19,6 +20,7 @@ const Backoffice = () => {
   const [form, setForm] = useState({});
   const [contractTenant, setContractTenant] = useState(null); // tenant being edited for contract
   const [contractForm, setContractForm] = useState({});
+  const [tempCredential, setTempCredential] = useState(null); // senha provisória recém-gerada
 
   const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
 
@@ -58,7 +60,9 @@ const Backoffice = () => {
       contrato_fim: t.contrato_fim ? t.contrato_fim.split('T')[0] : '',
       renovacao_auto: t.renovacao_auto ?? true,
       valor_mensal: t.valor_mensal || '',
-      plan_type: t.plan_type || 'Pro',
+      plan_type: t.plan_type || 'Profissional',
+      extra_assets: t.extra_assets ?? 0,
+      extra_users: t.extra_users ?? 0,
       status: t.status || 'Ativo',
     });
   };
@@ -77,16 +81,19 @@ const Backoffice = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const endpoints = { client: '/api/admin/tenants', invoice: '/api/admin/invoices', agent: '/api/admin/users' };
+    const mensagens = { client: 'Cliente cadastrado!', invoice: 'Fatura criada!', agent: 'Agente criado!' };
     try {
-      if (modalType === 'client') {
-        await fetch('/api/admin/tenants', { method: 'POST', headers, body: JSON.stringify(form) });
-        toast.success('Cliente cadastrado!');
-      } else if (modalType === 'invoice') {
-        await fetch('/api/admin/invoices', { method: 'POST', headers, body: JSON.stringify(form) });
-        toast.success('Fatura criada!');
-      } else if (modalType === 'agent') {
-        await fetch('/api/admin/users', { method: 'POST', headers, body: JSON.stringify(form) });
-        toast.success('Agente criado!');
+      const res = await fetch(endpoints[modalType], { method: 'POST', headers, body: JSON.stringify(form) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || 'Erro ao salvar');
+        return;
+      }
+      toast.success(mensagens[modalType]);
+      if (data.temp_password) {
+        const email = modalType === 'client' ? (form.contact_email || `admin@${form.id}.com`) : form.email;
+        setTempCredential({ email, password: data.temp_password });
       }
       setModalType(null); fetchAll();
     } catch { toast.error('Erro ao salvar'); }
@@ -113,6 +120,7 @@ const Backoffice = () => {
 
   return (
     <div className="fade-in">
+      <TempPasswordModal credential={tempCredential} onClose={() => setTempCredential(null)} />
       <div style={{ marginBottom: '32px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '700' }}>Painel Administrativo</h1>
         <p style={{ fontSize: '14px', color: 'var(--text-muted)' }}>Gestão de contratos, faturamento e equipe de suporte.</p>
@@ -206,7 +214,7 @@ const Backoffice = () => {
         <div className="premium-card" style={{ overflow: 'hidden' }}>
           <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ fontSize: '16px', fontWeight: '700' }}>Contratos / Clientes</h3>
-            <button className="btn-primary" onClick={() => { setForm({ id: '', name: '', plan_type: 'Pro', contact_email: '', contact_phone: '' }); setModalType('client'); }}>
+            <button className="btn-primary" onClick={() => { setForm({ id: '', name: '', plan_type: 'Profissional', contact_email: '', contact_phone: '' }); setModalType('client'); }}>
               <Plus size={16} /> Novo Cliente
             </button>
           </div>
@@ -379,8 +387,8 @@ const Backoffice = () => {
                     <input required type="email" style={inputStyle} value={form.email || ''} onChange={e => setForm({...form, email: e.target.value})} />
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ fontSize: '13px', fontWeight: '600' }}>Senha</label>
-                    <input type="password" style={inputStyle} placeholder="123456" value={form.password || ''} onChange={e => setForm({...form, password: e.target.value})} />
+                    <label style={{ fontSize: '13px', fontWeight: '600' }}>Senha (opcional)</label>
+                    <input type="password" style={inputStyle} placeholder="Em branco = gerar aleatória" value={form.password || ''} onChange={e => setForm({...form, password: e.target.value})} />
                   </div>
                 </>}
               </div>
@@ -401,6 +409,11 @@ const Backoffice = () => {
               <div>
                 <h3 style={{ fontSize: '18px', fontWeight: '700' }}>Gestão de Contrato</h3>
                 <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{contractTenant.name} ({contractTenant.id})</p>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  {contractTenant.stripe_subscription_id
+                    ? `Assinatura Stripe: ${contractTenant.subscription_status || 'aguardando'}${contractTenant.billing_cycle ? ` (${contractTenant.billing_cycle})` : ''}${contractTenant.current_period_end ? ` · próximo vencimento ${new Date(contractTenant.current_period_end).toLocaleDateString('pt-BR')}` : ''}. Plano e status são atualizados automaticamente pelo Stripe.`
+                    : 'Sem assinatura no Stripe (contrato gerenciado manualmente).'}
+                </p>
               </div>
               <button onClick={() => setContractTenant(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={20} /></button>
             </div>
@@ -409,9 +422,10 @@ const Backoffice = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <label style={{ fontSize: '13px', fontWeight: '600' }}>Plano</label>
                   <select style={inputStyle} value={contractForm.plan_type} onChange={e => setContractForm({...contractForm, plan_type: e.target.value})}>
-                    <option value="Starter">Starter</option>
-                    <option value="Pro">Pro</option>
-                    <option value="Enterprise">Enterprise</option>
+                    <option value="Essencial">Essencial (50 ativos, 3 usuários)</option>
+                    <option value="Profissional">Profissional (300 ativos, 10 usuários)</option>
+                    <option value="Industrial">Industrial (1.000 ativos, 30 usuários)</option>
+                    <option value="Corporativo">Corporativo (ilimitado)</option>
                   </select>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -433,6 +447,14 @@ const Backoffice = () => {
                     <option value="1">Automática</option>
                     <option value="0">Manual</option>
                   </select>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600' }}>Ativos extras (+100 = R$ 99/mês)</label>
+                  <input type="number" min="0" step="100" style={inputStyle} value={contractForm.extra_assets} onChange={e => setContractForm({...contractForm, extra_assets: e.target.value})} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600' }}>Usuários extras (R$ 29/mês cada)</label>
+                  <input type="number" min="0" step="1" style={inputStyle} value={contractForm.extra_users} onChange={e => setContractForm({...contractForm, extra_users: e.target.value})} />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <label style={{ fontSize: '13px', fontWeight: '600' }}>Início do Contrato</label>

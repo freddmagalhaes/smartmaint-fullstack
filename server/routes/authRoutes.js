@@ -1,13 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { query } = require('../utils/routeHelpers');
 const { handleQueryError } = require('../utils/errorHandler');
 const { sendEmail } = require('../utils/email');
-
-const JWT_SECRET = process.env.JWT_SECRET;
+const { checkTenantAccess, signToken, signBillingToken, canGetBillingToken } = require('../utils/session');
 
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
@@ -19,21 +17,17 @@ router.post('/login', async (req, res) => {
       
       if (isValid) {
         if (!user.is_master && user.role !== 'Suporte' && user.tenant_id) {
-          const tenantRows = await query('SELECT status FROM tenants WHERE id = ?', [user.tenant_id]);
-          if (tenantRows.length > 0) {
-            const tStatus = tenantRows[0].status;
-            if (tStatus === 'Inadimplente' || tStatus === 'Cancelado') {
-              return res.status(403).json({ error: 'Acesso bloqueado. Entre em contato com o suporte.' });
-            }
+          const blocked = await checkTenantAccess(user.tenant_id);
+          if (blocked) {
+            // A senha já foi validada: administradores podem ir ao faturamento com um token restrito
+            return res.status(403).json(canGetBillingToken(blocked, user) ? { ...blocked, billing_token: signBillingToken(user) } : blocked);
           }
         }
 
-        const token = jwt.sign(
-          { id: user.id, tenant_id: user.tenant_id, role: user.role, is_master: user.is_master },
-          JWT_SECRET,
-          { expiresIn: '24h' }
-        );
+        const token = signToken(user);
         delete user.password;
+        delete user.reset_token;
+        delete user.reset_token_expiry;
         res.json({ ...user, token });
       } else {
         res.status(401).json({ message: 'Credenciais inválidas' });

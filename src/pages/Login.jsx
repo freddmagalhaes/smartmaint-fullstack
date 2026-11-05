@@ -1,14 +1,43 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { LogIn, Mail, Lock, Loader2, Info, X } from 'lucide-react';
 import logo from '../assets/logo.png';
+import PlanPicker from '../components/PlanPicker';
+import { useBilling } from '../hooks/useBilling';
+
+// Teste vencido ou pagamento pendente: o administrador entra só no faturamento (token restrito) para assinar/regularizar
+const BillingGate = ({ gate, onBack }) => {
+  const billing = useBilling(gate.token);
+  const { data, loading, busy, error, openPortal } = billing;
+  const title = gate.code === 'TRIAL_EXPIRED' ? 'Seu período de teste terminou' : 'Pagamento pendente';
+  const showPortal = data?.can_manage && data?.subscription.has_customer;
+  return (
+    <div style={{ maxWidth: '760px', width: '100%', zIndex: 1 }} className="premium-card fade-in">
+      <div style={{ padding: '32px' }}>
+        <h1 style={{ fontSize: '22px', fontWeight: 700, color: 'var(--primary)', margin: '0 0 6px' }}>{title}</h1>
+        <p style={{ fontSize: '14px', color: 'var(--text-muted)', margin: '0 0 20px' }}>{gate.message}</p>
+        {error && <p role="alert" style={{ color: '#991b1b', fontSize: '13px' }}>{error}</p>}
+        {loading ? <p style={{ fontSize: '13px' }}>Carregando…</p> : showPortal && (
+          <button type="button" className="btn-primary" onClick={openPortal} disabled={busy} style={{ marginBottom: '16px' }}>
+            Atualizar pagamento e ver faturas
+          </button>
+        )}
+        {data && !data.subscription.has_subscription && <PlanPicker billing={billing} />}
+        <button type="button" onClick={onBack} style={{ marginTop: '20px', background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 600, cursor: 'pointer' }}>
+          ← Voltar ao login
+        </button>
+      </div>
+    </div>
+  );
+};
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [billingGate, setBillingGate] = useState(null);
   const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotMessage, setForgotMessage] = useState('');
@@ -16,6 +45,7 @@ const Login = () => {
   
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -23,23 +53,17 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      // Primeiro, checar diretamente a resposta do servidor para capturar 403
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-
-      if (res.status === 403) {
-        const data = await res.json();
-        setError(data.error || 'Acesso bloqueado. Entre em contato com o suporte.');
-        setIsLoading(false);
-        return;
-      }
-
-      const success = await login(email, password);
-      if (success) {
-        navigate('/');
+      const result = await login(email, password);
+      if (result.ok) {
+        // Volta para a página que a pessoa tentou abrir (ex.: ficha de um QR code); só caminhos internos
+        const from = location.state?.from;
+        const dest = from?.pathname && from.pathname.startsWith('/') && !from.pathname.startsWith('//')
+          ? `${from.pathname}${from.search || ''}` : '/';
+        navigate(dest, { replace: true });
+      } else if (result.billingToken) {
+        setBillingGate({ token: result.billingToken, code: result.code, message: result.error });
+      } else {
+        setError(result.error);
       }
     } catch {
       setError('Erro de comunicação com o servidor.');
@@ -66,6 +90,14 @@ const Login = () => {
       setIsForgotLoading(false);
     }
   };
+
+  if (billingGate) {
+    return (
+      <div style={{ ...styles.container, height: 'auto', minHeight: '100vh', padding: '24px' }}>
+        <BillingGate gate={billingGate} onBack={() => setBillingGate(null)} />
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>
@@ -152,10 +184,17 @@ const Login = () => {
         </form>
 
         <div style={styles.footer}>
+          {import.meta.env.VITE_SIGNUP_ENABLED !== 'false' && (
+            <p style={styles.footerText}>
+              Ainda não tem conta? <Link to="/signup" style={{ color: 'var(--primary)', fontWeight: 600 }}>Teste grátis</Link>
+            </p>
+          )}
           <p style={styles.footerText}>Acesso restrito a colaboradores autorizados.</p>
-          <div style={styles.demoCredits}>
-            <p>Dica: 123456 | dono@smartmaint.com</p>
-          </div>
+          {import.meta.env.DEV && (
+            <div style={styles.demoCredits}>
+              <p>Dica: 123456 | dono@smartmaint.com</p>
+            </div>
+          )}
         </div>
       </div>
 

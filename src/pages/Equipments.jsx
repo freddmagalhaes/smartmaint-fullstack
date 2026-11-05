@@ -1,13 +1,23 @@
 import { useState } from 'react';
 import { 
   Plus, Search, 
-  Calendar, Hash, Tag, Activity, X, Trash2, Edit2
+  Calendar, Hash, Tag, Activity, X, Trash2, Edit2, FileSpreadsheet, Lock, QrCode, Printer
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useData } from '../contexts/DataContext';
+import { usePlan, hasFeature } from '../contexts/PlanContext';
+import ImportEquipmentsModal from '../components/ImportEquipmentsModal';
+import QrModal from '../components/QrModal';
+import { APP_BASE_URL } from '../config';
+import { printLabels } from '../utils/qr';
 
 const Equipments = () => {
   const { equipments, addEquipment, updateEquipment, deleteEquipment } = useData();
   const [searchTerm, setSearchTerm] = useState('');
+  const plan = usePlan();
+  const canImport = hasFeature(plan, 'import');
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [qrAsset, setQrAsset] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -37,6 +47,16 @@ const Equipments = () => {
       data_inicio: new Date().toISOString().split('T')[0]
     });
     setIsModalOpen(true);
+  };
+
+  const MAX_LABELS = 120; // cada etiqueta carrega uma imagem; folhas enormes travam o navegador
+  const handlePrintAllLabels = async () => {
+    if (filteredEquipments.length === 0) return;
+    const lote = filteredEquipments.slice(0, MAX_LABELS);
+    try {
+      if (!(await printLabels(lote, APP_BASE_URL))) { toast.error('O navegador bloqueou a janela de impressão. Libere pop-ups para este site.'); return; }
+      if (filteredEquipments.length > MAX_LABELS) toast.info(`Foram impressas as primeiras ${MAX_LABELS} etiquetas. Use a busca para imprimir o restante.`);
+    } catch { toast.error('Não foi possível gerar as etiquetas.'); }
   };
 
   const handleOpenEdit = (eq) => {
@@ -94,11 +114,25 @@ const Equipments = () => {
           <h1 style={styles.pageTitle}>Gestão de Ativos</h1>
           <p style={styles.pageSubtitle}>Visualize e gerencie todos os equipamentos da planta.</p>
         </div>
-        <button className="btn-primary" onClick={handleOpenAdd}>
-          <Plus size={20} />
-          Novo Equipamento
-        </button>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => (canImport
+              ? setIsImportOpen(true)
+              : toast.info('A importação por planilha está disponível a partir do plano Profissional.'))}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '8px', fontWeight: 500, border: '1px solid var(--border)', background: 'white', color: 'var(--text-main)', cursor: 'pointer' }}
+          >
+            {canImport ? <FileSpreadsheet size={20} /> : <Lock size={18} />}
+            Importar planilha
+          </button>
+          <button className="btn-primary" onClick={handleOpenAdd}>
+            <Plus size={20} />
+            Novo Equipamento
+          </button>
+        </div>
       </header>
+      {isImportOpen && <ImportEquipmentsModal onClose={() => setIsImportOpen(false)} />}
+      {qrAsset && <QrModal asset={qrAsset} onClose={() => setQrAsset(null)} />}
 
       {/* Filtros e Busca */}
       <div className="premium-card" style={styles.toolbar}>
@@ -112,6 +146,10 @@ const Equipments = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+        <button type="button" onClick={handlePrintAllLabels} disabled={filteredEquipments.length === 0}
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '8px', fontWeight: 500, border: '1px solid var(--border)', background: 'white', color: 'var(--text-main)', cursor: 'pointer' }}>
+          <Printer size={18} /> Etiquetas QR ({Math.min(filteredEquipments.length, MAX_LABELS)})
+        </button>
       </div>
 
       {/* Tabela de Equipamentos */}
@@ -179,6 +217,9 @@ const Equipments = () => {
                 </td>
                 <td style={styles.td}>
                   <div style={{ display: 'flex', gap: '8px' }}>
+                    <button style={styles.actionBtn} onClick={() => setQrAsset(eq)} aria-label={`QR code de ${eq.name}`} title="QR code">
+                      <QrCode size={16} />
+                    </button>
                     <button style={styles.actionBtn} onClick={() => handleOpenEdit(eq)}>
                       <Edit2 size={16} />
                     </button>
