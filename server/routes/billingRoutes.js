@@ -74,8 +74,12 @@ router.get('/billing/subscription', requireRole(ROLES.ADMIN), tenantScope, async
 });
 
 router.post('/billing/subscription', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
-  const d = parse(z.object({ method: z.enum(METHODS), plan_id: z.string().min(1).max(50).optional() }), req.body);
-  const result = await subscriptions.startSubscription(req.tenantId, { method: d.method, planId: d.plan_id });
+  const d = parse(z.object({
+    method: z.enum(METHODS),
+    plan_id: z.string().min(1).max(50).optional(),
+    cycle: z.enum(['mensal', 'anual']).default('mensal'),
+  }), req.body);
+  const result = await subscriptions.startSubscription(req.tenantId, { method: d.method, planId: d.plan_id, cycle: d.cycle });
   await audit(req, { action: 'subscribe', entity: 'subscription', entityId: req.tenantId, changes: d });
   res.status(201).json(result);
 });

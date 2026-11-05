@@ -9,9 +9,16 @@ const LIMITS = [
   ['max_units', 'Unidades'],
 ];
 
+const FEATURES = [
+  ['has_fmea', 'Análise FMEA'],
+  ['has_simulator', 'Simulador de confiabilidade'],
+  ['has_import', 'Importação por planilha'],
+];
+
 const toForm = (plan) => ({
   ...plan,
   price_monthly: plan.price_monthly ?? '',
+  price_annual: plan.price_annual ?? '',
   ...Object.fromEntries(LIMITS.map(([key]) => [key, plan[key] ?? ''])),
 });
 
@@ -31,6 +38,8 @@ const PlansTab = () => {
       const body = {
         name: plan.name,
         price_monthly: Number(plan.price_monthly) || 0,
+        price_annual: plan.price_annual === '' ? null : Number(plan.price_annual),
+        ...Object.fromEntries(FEATURES.map(([key]) => [key, Boolean(plan[key])])),
         trial_days: Number(plan.trial_days) || 0,
         active: Boolean(plan.active),
         ...Object.fromEntries(LIMITS.map(([key]) => [key, plan[key] === '' ? null : Number(plan[key])])),
@@ -49,7 +58,7 @@ const PlansTab = () => {
     <div>
       <p style={styles.hint}>
         Limites aplicados na criação de usuários, equipamentos e unidades. Deixe em branco para ilimitado.
-        O preço será usado na cobrança recorrente.
+        O preço mensal e o anual (total por ano; só no cartão) são usados na cobrança recorrente. Planos sem os recursos marcados bloqueiam FMEA, simulador e importação.
       </p>
       <div style={styles.grid}>
         {plans.map((plan) => (
@@ -63,6 +72,9 @@ const PlansTab = () => {
             <label style={styles.label}>Preço mensal (R$)
               <input type="number" min="0" step="0.01" style={styles.input} value={plan.price_monthly} onChange={(e) => update(plan.id, 'price_monthly', e.target.value)} />
             </label>
+            <label style={styles.label}>Preço anual (R$ por ano)
+              <input type="number" min="0" step="0.01" placeholder="Sem cobrança anual" style={styles.input} value={plan.price_annual} onChange={(e) => update(plan.id, 'price_annual', e.target.value)} />
+            </label>
             <label style={styles.label}>Dias de teste grátis
               <input type="number" min="0" max="365" style={styles.input} value={plan.trial_days} onChange={(e) => update(plan.id, 'trial_days', e.target.value)} />
             </label>
@@ -71,6 +83,14 @@ const PlansTab = () => {
                 <input type="number" min="0" placeholder="Ilimitado" style={styles.input} value={plan[key]} onChange={(e) => update(plan.id, key, e.target.value)} />
               </label>
             ))}
+            <fieldset style={styles.fieldset}>
+              <legend style={styles.legend}>Recursos incluídos</legend>
+              {FEATURES.map(([key, label]) => (
+                <label key={key} style={styles.check}>
+                  <input type="checkbox" checked={Boolean(plan[key])} onChange={(e) => update(plan.id, key, e.target.checked)} /> {label}
+                </label>
+              ))}
+            </fieldset>
             <button className="btn-primary" style={{ justifyContent: 'center' }} onClick={() => save(plan)} disabled={saving === plan.id}>
               <Save size={16} /> {saving === plan.id ? 'Salvando...' : 'Salvar'}
             </button>
@@ -88,6 +108,8 @@ const styles = {
   cardHeader: { display: 'flex', alignItems: 'center', gap: '12px' },
   check: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-muted)', whiteSpace: 'nowrap' },
   label: { display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px', fontWeight: 600 },
+  fieldset: { border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px' },
+  legend: { fontSize: '12px', fontWeight: 600, padding: '0 6px', color: 'var(--text-muted)' },
   input: { padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '14px', fontWeight: 400, width: '100%' },
 };
 

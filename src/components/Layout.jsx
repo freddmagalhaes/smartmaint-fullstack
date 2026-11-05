@@ -2,6 +2,7 @@ import { Suspense, useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth, ROLES } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
+import { usePlanFeatures, planHas } from '../contexts/PlanFeaturesContext';
 import {
   LayoutDashboard,
   Settings,
@@ -20,7 +21,8 @@ import {
   Package,
   CalendarCheck,
   Factory,
-  FileBarChart
+  FileBarChart,
+  Lock
 } from 'lucide-react';
 import logo from '../assets/logo.png';
 import { PageLoader } from './ProtectedRoute';
@@ -37,8 +39,8 @@ const NAV_ITEMS = [
   { label: 'Ordens de Serviço', path: '/work-orders', icon: ClipboardList, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER, USER] },
   { label: 'Equipamentos', path: '/equipments', icon: Cpu, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   { label: 'Falhas & Reparos', path: '/failures', icon: AlertTriangle, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
-  { label: 'Análise FMEA', path: '/fmea', icon: Activity, roles: [ROOT, BACKOFFICE, ADMIN] },
-  { label: 'Simulador R(t)', path: '/simulator', icon: Calculator, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
+  { label: 'Análise FMEA', path: '/fmea', icon: Activity, roles: [ROOT, BACKOFFICE, ADMIN], feature: 'fmea' },
+  { label: 'Simulador R(t)', path: '/simulator', icon: Calculator, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER], feature: 'simulator' },
   { label: 'Planos Preventivos', path: '/preventive', icon: CalendarCheck, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   { label: 'Gestão de Estoque', path: '/inventory', icon: Package, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
   { label: 'Relatórios', path: '/reports', icon: FileBarChart, roles: [ROOT, BACKOFFICE, ADMIN, MANAGER] },
@@ -50,6 +52,7 @@ const Layout = ({ children }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const { user, logout, hasRole, isBackoffice, activeTenant, tenants, switchTenant } = useAuth();
+  const planFeatures = usePlanFeatures();
   const { units, activeUnit, setActiveUnit } = useData();
   const navigate = useNavigate();
   const location = useLocation();
@@ -103,6 +106,9 @@ const Layout = ({ children }) => {
               >
                 <item.icon size={20} />
                 <span className="app-nav-label">{item.label}</span>
+                {item.feature && !planHas(planFeatures, item.feature) && (
+                  <Lock size={14} aria-label="Fora do seu plano" style={{ marginLeft: 'auto', opacity: 0.7 }} />
+                )}
               </Link>
             );
           })}

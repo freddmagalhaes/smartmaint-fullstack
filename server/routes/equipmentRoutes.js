@@ -3,7 +3,7 @@ const {
   query, assertEquipmentInTenant, assertUnitInTenant, defaultUnitId, assertAffected, buildUpdate,
 } = require('../utils/routeHelpers');
 const { pageParams, paginate, like } = require('../utils/pagination');
-const { assertWithinLimit, getTenantPlan } = require('../utils/plans');
+const { assertWithinLimit, getTenantPlan, requirePlanFeature } = require('../utils/plans');
 const { HttpError } = require('../utils/errorHandler');
 const db = require('../db');
 const { audit } = require('../utils/audit');
@@ -167,7 +167,7 @@ const importRowSchema = z.object({
  * Tudo ou nada: com qualquer erro, nada é gravado e a resposta traz o erro de cada linha.
  * Com dry_run=true apenas valida (pré-visualização).
  */
-router.post('/equipments/import', requireRole(...MANAGERS), tenantScope, async (req, res) => {
+router.post('/equipments/import', requireRole(...MANAGERS), tenantScope, requirePlanFeature('import'), async (req, res) => {
   const { rows, dry_run: dryRun, default_unit_id: defaultUnit } = parse(z.object({
     rows: z.array(z.record(z.string(), z.any())).min(1, 'a planilha está vazia').max(MAX_IMPORT_ROWS, `máximo de ${MAX_IMPORT_ROWS} linhas por importação`),
     dry_run: z.boolean().default(false),
@@ -324,7 +324,7 @@ const fmeaSchema = z.object({
   deteccao: score,
 });
 
-router.get('/fmea', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
+router.get('/fmea', requireRole(ROLES.ADMIN), tenantScope, requirePlanFeature('fmea'), async (req, res) => {
   const { page, pageSize, q } = pageParams(req);
   const f = parse(filterSchema, req.query);
   const where = ['m.tenant_id = ?'];
@@ -338,7 +338,7 @@ router.get('/fmea', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
   }));
 });
 
-router.post('/fmea', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
+router.post('/fmea', requireRole(ROLES.ADMIN), tenantScope, requirePlanFeature('fmea'), async (req, res) => {
   const d = parse(fmeaSchema, req.body);
   await assertEquipmentInTenant(d.equipment_id, req.tenantId);
   const result = await query(
@@ -349,7 +349,7 @@ router.post('/fmea', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => 
   res.status(201).json({ id: result.insertId, ...d, tenant_id: req.tenantId });
 });
 
-router.put('/fmea/:id', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
+router.put('/fmea/:id', requireRole(ROLES.ADMIN), tenantScope, requirePlanFeature('fmea'), async (req, res) => {
   const fmeaId = idParam(req);
   const d = parse(fmeaSchema.partial(), req.body);
   if (d.equipment_id) await assertEquipmentInTenant(d.equipment_id, req.tenantId);
@@ -359,7 +359,7 @@ router.put('/fmea/:id', requireRole(ROLES.ADMIN), tenantScope, async (req, res) 
   res.json({ message: 'Atualizado com sucesso' });
 });
 
-router.delete('/fmea/:id', requireRole(ROLES.ADMIN), tenantScope, async (req, res) => {
+router.delete('/fmea/:id', requireRole(ROLES.ADMIN), tenantScope, requirePlanFeature('fmea'), async (req, res) => {
   const fmeaId = idParam(req);
   assertAffected(await query('DELETE FROM fmea WHERE id = ? AND tenant_id = ?', [fmeaId, req.tenantId]), 'Item FMEA não encontrado');
   await audit(req, { action: 'delete', entity: 'fmea', entityId: fmeaId });
