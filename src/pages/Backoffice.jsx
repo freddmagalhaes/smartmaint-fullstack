@@ -3,13 +3,22 @@ import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
 import { 
   Building2, Users, CreditCard, Plus,
-  CheckCircle2, XCircle, ExternalLink, RefreshCw, X, Trash2, DollarSign, FileText
+  CheckCircle2, XCircle, ExternalLink, RefreshCw, X, Trash2, DollarSign, FileText,
+  Layers, Receipt,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import TempPasswordModal from '../components/TempPasswordModal';
+import { useConfirm } from '../components/ConfirmDialog';
+import { apiFetch } from '../api/client';
+import { formatCurrency, formatDate, parseLocalDate } from '../utils/format';
+import PlansTab from './backoffice/PlansTab';
+import FiscalTab from './backoffice/FiscalTab';
+
+// Forma de pagamento da assinatura (Configurações → Faturamento do cliente)
+const BILLING_METHODS = { card: 'Cartão', pix_automatico: 'Pix Automático', boleto: 'Boleto', pix: 'Pix' };
 
 const Backoffice = () => {
-  const { user, token, switchTenant } = useAuth();
+  const { user, token, switchTenant, refreshTenants } = useAuth();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [tenants, setTenants] = useState([]);
   const [invoices, setInvoices] = useState([]);
@@ -20,35 +29,47 @@ const Backoffice = () => {
   const [form, setForm] = useState({});
   const [contractTenant, setContractTenant] = useState(null); // tenant being edited for contract
   const [contractForm, setContractForm] = useState({});
-  const [tempCredential, setTempCredential] = useState(null); // senha provisória recém-gerada
 
-  const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+  const [saving, setSaving] = useState(false);
 
   const fetchAll = async () => {
-    try {
-      const [t, i, u] = await Promise.all([
-        fetch('/api/admin/tenants', { headers }).then(r => r.json()),
-        fetch('/api/admin/invoices', { headers }).then(r => r.json()),
-        fetch('/api/admin/users', { headers }).then(r => r.json()).catch(() => [])
-      ]);
-      setTenants(t || []); setInvoices(i || []); setBoUsers(u || []);
-    } catch { toast.error('Erro ao carregar dados'); }
-    finally { setLoading(false); }
+    const [t, i, u] = await Promise.allSettled([
+      apiFetch('/api/admin/tenants'),
+      apiFetch('/api/admin/invoices'),
+      user?.isMaster ? apiFetch('/api/admin/users') : Promise.resolve([]),
+    ]);
+    if (t.status === 'fulfilled') setTenants(t.value);
+    if (i.status === 'fulfilled') setInvoices(i.value);
+    if (u.status === 'fulfilled') setBoUsers(u.value);
+    if ([t, i, u].some((r) => r.status === 'rejected')) toast.error('Erro ao carregar alguns dados do painel');
+    setLoading(false);
+    refreshTenants();
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchAll(); }, [token]);
 
-  const toggleStatus = async (id, cur) => {
+  /** Executa uma ação do painel, exibe o resultado e recarrega os dados. */
+  const run = async (action, successMessage) => {
+    try {
+      const result = await action();
+      if (successMessage) toast.success(typeof successMessage === 'function' ? successMessage(result) : successMessage);
+      await fetchAll();
+      return true;
+    } catch (err) {
+      toast.error(err.message);
+      return false;
+    }
+  };
+
+  const toggleStatus = (id, cur) => {
     const s = cur === 'Ativo' ? 'Cancelado' : 'Ativo';
-    await fetch(`/api/admin/tenants/${id}/status`, { method: 'PUT', headers, body: JSON.stringify({ status: s }) });
-    toast.success(`Status → ${s}`); fetchAll();
+    return run(() => apiFetch(`/api/admin/tenants/${id}/status`, { method: 'PUT', body: { status: s } }), `Status → ${s}`);
   };
 
   const deleteTenant = async (id) => {
-    if (!window.confirm(`Excluir permanentemente o cliente "${id}"? Todos os dados serão perdidos.`)) return;
-    await fetch(`/api/admin/tenants/${id}`, { method: 'DELETE', headers });
-    toast.success('Cliente excluído'); fetchAll();
+    const ok = await confirm(`Excluir permanentemente o cliente "${id}"? Todos os dados (equipamentos, O.S., usuários, faturas) serão perdidos.`, { title: 'Excluir cliente' });
+    if (ok) run(() => apiFetch(`/api/admin/tenants/${id}`, { method: 'DELETE' }), 'Cliente excluído');
   };
 
   const handleImpersonate = (tid) => { switchTenant(tid); navigate('/'); toast.success(`Modo Cliente: ${tid.toUpperCase()}`); };
@@ -56,58 +77,50 @@ const Backoffice = () => {
   const openContract = (t) => {
     setContractTenant(t);
     setContractForm({
-      contrato_inicio: t.contrato_inicio ? t.contrato_inicio.split('T')[0] : '',
-      contrato_fim: t.contrato_fim ? t.contrato_fim.split('T')[0] : '',
-      renovacao_auto: t.renovacao_auto ?? true,
+      contrato_inicio: t.contrato_inicio ? t.contrato_inicio.slice(0, 10) : '',
+      contrato_fim: t.contrato_fim ? t.contrato_fim.slice(0, 10) : '',
+      renovacao_auto: Boolean(t.renovacao_auto ?? true),
       valor_mensal: t.valor_mensal || '',
-      plan_type: t.plan_type || 'Profissional',
-      extra_assets: t.extra_assets ?? 0,
-      extra_users: t.extra_users ?? 0,
+      plan_type: t.plan_type || 'Pro',
       status: t.status || 'Ativo',
     });
   };
 
   const saveContract = async (e) => {
     e.preventDefault();
-    try {
-      await fetch(`/api/admin/tenants/${contractTenant.id}/contract`, {
-        method: 'PUT', headers,
-        body: JSON.stringify(contractForm)
-      });
-      toast.success('Contrato atualizado!');
-      setContractTenant(null); fetchAll();
-    } catch { toast.error('Erro ao salvar contrato'); }
+    const body = { ...contractForm, valor_mensal: contractForm.valor_mensal === '' ? undefined : Number(contractForm.valor_mensal) };
+    const ok = await run(() => apiFetch(`/api/admin/tenants/${contractTenant.id}/contract`, { method: 'PUT', body }), 'Contrato atualizado!');
+    if (ok) setContractTenant(null);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const endpoints = { client: '/api/admin/tenants', invoice: '/api/admin/invoices', agent: '/api/admin/users' };
-    const mensagens = { client: 'Cliente cadastrado!', invoice: 'Fatura criada!', agent: 'Agente criado!' };
-    try {
-      const res = await fetch(endpoints[modalType], { method: 'POST', headers, body: JSON.stringify(form) });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(data.error || 'Erro ao salvar');
-        return;
-      }
-      toast.success(mensagens[modalType]);
-      if (data.temp_password) {
-        const email = modalType === 'client' ? (form.contact_email || `admin@${form.id}.com`) : form.email;
-        setTempCredential({ email, password: data.temp_password });
-      }
-      setModalType(null); fetchAll();
-    } catch { toast.error('Erro ao salvar'); }
+    setSaving(true);
+    const inviteMessage = (label) => (result) => (result?.invite_sent
+      ? `${label} Convite enviado por e-mail.`
+      : `${label} O e-mail de convite não pôde ser enviado: oriente o uso de "Esqueci minha senha".`);
+    let ok = false;
+    if (modalType === 'client') {
+      ok = await run(() => apiFetch('/api/admin/tenants', { method: 'POST', body: form }), inviteMessage('Cliente cadastrado!'));
+    } else if (modalType === 'invoice') {
+      ok = await run(() => apiFetch('/api/admin/invoices', { method: 'POST', body: { ...form, valor: Number(form.valor) } }), 'Fatura criada!');
+    } else if (modalType === 'agent') {
+      const { name, email, password } = form;
+      ok = await run(
+        () => apiFetch('/api/admin/users', { method: 'POST', body: { name, email, ...(password && { password }) } }),
+        password ? 'Agente criado!' : inviteMessage('Agente criado!')
+      );
+    }
+    setSaving(false);
+    if (ok) setModalType(null);
   };
 
-  const markInvoice = async (id, s) => {
-    await fetch(`/api/admin/invoices/${id}/status`, { method: 'PUT', headers, body: JSON.stringify({ status: s }) });
-    toast.success(`Fatura → ${s}`); fetchAll();
-  };
+  const markInvoice = (id, s) => run(() => apiFetch(`/api/admin/invoices/${id}/status`, { method: 'PUT', body: { status: s } }), `Fatura → ${s}`);
 
   const activeClients = tenants.filter(t => t.status === 'Ativo').length;
   const totalUsers = tenants.reduce((a, t) => a + (t.users_count || 0), 0);
   const pendingValue = tenants.reduce((a, t) => a + parseFloat(t.pending_value || 0), 0);
-  const getColor = (s) => s === 'Ativo' ? '#10b981' : s === 'Inadimplente' ? '#f59e0b' : '#ef4444';
+  const getColor = (s) => s === 'Ativo' ? '#10b981' : s === 'Trial' ? '#3b82f6' : s === 'Pendente' ? '#64748b' : s === 'Inadimplente' ? '#f59e0b' : '#ef4444';
   const getInvColor = (s) => s === 'Paga' ? '#10b981' : s === 'Atrasada' ? '#ef4444' : '#f59e0b';
 
   if (loading) return <div className="flex-center" style={{ height: '50vh' }}><RefreshCw /></div>;
@@ -116,22 +129,25 @@ const Backoffice = () => {
     { id: 'clients', label: 'Clientes', icon: Building2 },
     { id: 'billing', label: 'Faturas', icon: CreditCard },
   ];
-  if (user?.isMaster) tabs.push({ id: 'team', label: 'Equipe Backoffice', icon: Users });
+  if (user?.isMaster) {
+    tabs.push({ id: 'team', label: 'Equipe Backoffice', icon: Users });
+    tabs.push({ id: 'plans', label: 'Planos', icon: Layers });
+    tabs.push({ id: 'fiscal', label: 'Fiscal (NFS-e)', icon: Receipt });
+  }
 
   return (
     <div className="fade-in">
-      <TempPasswordModal credential={tempCredential} onClose={() => setTempCredential(null)} />
       <div style={{ marginBottom: '32px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '700' }}>Painel Administrativo</h1>
         <p style={{ fontSize: '14px', color: 'var(--text-muted)' }}>Gestão de contratos, faturamento e equipe de suporte.</p>
       </div>
 
       {/* Métricas */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '32px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '20px', marginBottom: '32px' }}>
         {[
           { label: 'Clientes Ativos', value: `${activeClients}/${tenants.length}`, icon: Building2, color: '#10b981' },
           { label: 'Usuários Totais', value: totalUsers, icon: Users, color: '#3b82f6' },
-          { label: 'A Receber', value: `R$ ${pendingValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, icon: DollarSign, color: '#f59e0b' },
+          { label: 'A Receber', value: formatCurrency(pendingValue), icon: DollarSign, color: '#f59e0b' },
         ].map((m, i) => (
           <div key={i} className="premium-card" style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: `${m.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -150,7 +166,7 @@ const Backoffice = () => {
         const hoje = new Date();
         const vencendo = tenants.filter(t => {
           if (!t.contrato_fim) return false;
-          const fim = new Date(t.contrato_fim);
+          const fim = parseLocalDate(t.contrato_fim);
           const diff = Math.ceil((fim - hoje) / (1000*60*60*24));
           return diff >= 0 && diff <= 30 && t.status === 'Ativo';
         });
@@ -159,12 +175,12 @@ const Backoffice = () => {
         const hasAlerts = vencendo.length > 0 || bloqueados.length > 0 || atrasadas.length > 0;
 
         return hasAlerts ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px', marginBottom: '28px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: '16px', marginBottom: '28px' }}>
             {vencendo.length > 0 && (
               <div style={{ padding: '16px 20px', borderRadius: '12px', background: '#fffbeb', border: '1px solid #fde68a' }}>
                 <p style={{ fontSize: '13px', fontWeight: '700', color: '#b45309', marginBottom: '8px' }}>⏳ Contratos Vencendo em 30 dias</p>
                 {vencendo.map(t => {
-                  const dias = Math.ceil((new Date(t.contrato_fim) - hoje) / (1000*60*60*24));
+                  const dias = Math.ceil((parseLocalDate(t.contrato_fim) - hoje) / (1000*60*60*24));
                   return (
                     <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #fde68a' }}>
                       <span style={{ fontSize: '13px', fontWeight: '600' }}>{t.name}</span>
@@ -180,7 +196,7 @@ const Backoffice = () => {
                 {atrasadas.slice(0, 5).map(inv => (
                   <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #fecaca' }}>
                     <span style={{ fontSize: '13px', fontWeight: '600' }}>{inv.tenant_name}</span>
-                    <span style={{ fontSize: '12px', color: '#dc2626', fontWeight: '600' }}>R$ {parseFloat(inv.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} • {inv.mes_ref}</span>
+                    <span style={{ fontSize: '12px', color: '#dc2626', fontWeight: '600' }}>{formatCurrency(inv.valor)} • {inv.mes_ref}</span>
                   </div>
                 ))}
               </div>
@@ -201,7 +217,7 @@ const Backoffice = () => {
       })()}
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', background: 'white', padding: '4px', borderRadius: '10px', border: '1px solid var(--border)', width: 'fit-content' }}>
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', background: 'white', padding: '4px', borderRadius: '10px', border: '1px solid var(--border)', maxWidth: '100%', width: 'fit-content', overflowX: 'auto' }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', background: activeTab === t.id ? 'var(--primary)' : 'transparent', color: activeTab === t.id ? 'white' : 'var(--text-muted)', border: 'none', cursor: 'pointer' }}>
             <t.icon size={16} /> {t.label}
@@ -214,10 +230,11 @@ const Backoffice = () => {
         <div className="premium-card" style={{ overflow: 'hidden' }}>
           <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ fontSize: '16px', fontWeight: '700' }}>Contratos / Clientes</h3>
-            <button className="btn-primary" onClick={() => { setForm({ id: '', name: '', plan_type: 'Profissional', contact_email: '', contact_phone: '' }); setModalType('client'); }}>
+            <button className="btn-primary" onClick={() => { setForm({ id: '', name: '', plan_type: 'Pro', contact_email: '', contact_phone: '' }); setModalType('client'); }}>
               <Plus size={16} /> Novo Cliente
             </button>
           </div>
+          <div className="table-wrap">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
               {['Cliente', 'Plano', 'Usuários', 'Equipamentos', 'Financeiro', 'Status', 'Ações'].map(h => (
@@ -231,7 +248,10 @@ const Backoffice = () => {
                     <p style={{ fontWeight: '600', fontSize: '14px' }}>{t.name}</p>
                     <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>ID: {t.id} {t.contact_email && `• ${t.contact_email}`}</p>
                   </td>
-                  <td style={{ padding: '14px 20px' }}><span style={{ padding: '3px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', background: '#f1f5f9' }}>{t.plan_type}</span></td>
+                  <td style={{ padding: '14px 20px' }}>
+                    <span style={{ padding: '3px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', background: '#f1f5f9' }}>{t.plan_type}</span>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>{BILLING_METHODS[t.billing_method] || 'Sem assinatura'}</div>
+                  </td>
                   <td style={{ padding: '14px 20px', fontWeight: '600' }}>{t.users_count}</td>
                   <td style={{ padding: '14px 20px', fontWeight: '600' }}>{t.equipments_count}</td>
                   <td style={{ padding: '14px 20px' }}>
@@ -247,7 +267,7 @@ const Backoffice = () => {
                   <td style={{ padding: '14px 20px' }}>
                     <div style={{ display: 'flex', gap: '6px' }}>
                       <button style={{ background: 'rgba(59,130,246,0.08)', border: 'none', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', color: 'var(--primary)', fontSize: '12px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => openContract(t)} title="Gerenciar Contrato"><FileText size={14} /> Contrato</button>
-                      <button style={{ background: 'transparent', border: 'none', padding: '6px', cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => handleImpersonate(t.id)} title="Acessar como cliente"><ExternalLink size={16} /></button>
+                      <button style={{ background: 'transparent', border: 'none', padding: '6px', cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => handleImpersonate(t.id)} title="Acessar como cliente" aria-label={`Acessar dados de ${t.name}`}><ExternalLink size={16} /></button>
                       <button style={{ background: 'transparent', border: 'none', padding: '6px', cursor: 'pointer', color: t.status === 'Ativo' ? '#ef4444' : '#10b981' }} onClick={() => toggleStatus(t.id, t.status)} title={t.status === 'Ativo' ? 'Bloquear' : 'Reativar'}>
                         {t.status === 'Ativo' ? <XCircle size={16} /> : <CheckCircle2 size={16} />}
                       </button>
@@ -258,6 +278,7 @@ const Backoffice = () => {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -270,6 +291,7 @@ const Backoffice = () => {
               <Plus size={16} /> Nova Fatura
             </button>
           </div>
+          <div className="table-wrap">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
               {['Cliente', 'Mês Ref.', 'Valor', 'Vencimento', 'Status', 'Ações'].map(h => (
@@ -281,8 +303,8 @@ const Backoffice = () => {
                 <tr key={inv.id} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td style={{ padding: '14px 20px', fontWeight: '600', fontSize: '14px' }}>{inv.tenant_name}</td>
                   <td style={{ padding: '14px 20px', fontSize: '14px' }}>{inv.mes_ref}</td>
-                  <td style={{ padding: '14px 20px', fontWeight: '700', fontSize: '14px' }}>R$ {parseFloat(inv.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                  <td style={{ padding: '14px 20px', fontSize: '14px' }}>{new Date(inv.vencimento).toLocaleDateString('pt-BR')}</td>
+                  <td style={{ padding: '14px 20px', fontWeight: '700', fontSize: '14px' }}>{formatCurrency(inv.valor)}</td>
+                  <td style={{ padding: '14px 20px', fontSize: '14px' }}>{formatDate(inv.vencimento)}</td>
                   <td style={{ padding: '14px 20px' }}>
                     <span style={{ padding: '3px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', background: `${getInvColor(inv.status)}15`, color: getInvColor(inv.status) }}>{inv.status}</span>
                   </td>
@@ -296,6 +318,7 @@ const Backoffice = () => {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -327,10 +350,13 @@ const Backoffice = () => {
         </div>
       )}
 
+      {activeTab === 'plans' && user?.isMaster && <PlansTab />}
+      {activeTab === 'fiscal' && user?.isMaster && <FiscalTab />}
+
       {/* --- MODAL UNIVERSAL --- */}
       {modalType && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div className="premium-card fade-in" style={{ width: '100%', maxWidth: '500px', padding: '32px', background: 'white' }}>
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={{ maxWidth: '500px', padding: '32px', background: 'white' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '700' }}>
                 {modalType === 'client' ? 'Novo Cliente' : modalType === 'invoice' ? 'Nova Fatura' : 'Novo Agente'}
@@ -338,19 +364,19 @@ const Backoffice = () => {
               <button onClick={() => setModalType(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={20} /></button>
             </div>
             <form onSubmit={handleSubmit}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+              <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
                 {modalType === 'client' && <>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <label style={{ fontSize: '13px', fontWeight: '600' }}>ID (slug)</label>
-                    <input required style={inputStyle} placeholder="ex: acme" value={form.id || ''} onChange={e => setForm({...form, id: e.target.value})} />
+                    <input required pattern="[a-z0-9][a-z0-9\-]{1,49}" title="Letras minúsculas, números e hífen" style={inputStyle} placeholder="ex: acme" value={form.id || ''} onChange={e => setForm({...form, id: e.target.value.toLowerCase()})} />
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <label style={{ fontSize: '13px', fontWeight: '600' }}>Razão Social</label>
                     <input required style={inputStyle} value={form.name || ''} onChange={e => setForm({...form, name: e.target.value})} />
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ fontSize: '13px', fontWeight: '600' }}>E-mail Contato</label>
-                    <input type="email" style={inputStyle} value={form.contact_email || ''} onChange={e => setForm({...form, contact_email: e.target.value})} />
+                    <label style={{ fontSize: '13px', fontWeight: '600' }}>E-mail do Administrador</label>
+                    <input required type="email" style={inputStyle} value={form.contact_email || ''} onChange={e => setForm({...form, contact_email: e.target.value})} />
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <label style={{ fontSize: '13px', fontWeight: '600' }}>Telefone</label>
@@ -388,13 +414,13 @@ const Backoffice = () => {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <label style={{ fontSize: '13px', fontWeight: '600' }}>Senha (opcional)</label>
-                    <input type="password" style={inputStyle} placeholder="Em branco = gerar aleatória" value={form.password || ''} onChange={e => setForm({...form, password: e.target.value})} />
+                    <input type="password" minLength={8} autoComplete="new-password" style={inputStyle} placeholder="Em branco = convite por e-mail" value={form.password || ''} onChange={e => setForm({...form, password: e.target.value})} />
                   </div>
                 </>}
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
                 <button type="button" onClick={() => setModalType(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontWeight: '600', cursor: 'pointer' }}>Cancelar</button>
-                <button type="submit" className="btn-primary">Salvar</button>
+                <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Salvando...' : 'Salvar'}</button>
               </div>
             </form>
           </div>
@@ -403,29 +429,23 @@ const Backoffice = () => {
 
       {/* --- MODAL DE CONTRATO --- */}
       {contractTenant && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div className="premium-card fade-in" style={{ width: '100%', maxWidth: '560px', padding: '32px', background: 'white' }}>
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={{ maxWidth: '560px', padding: '32px', background: 'white' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <div>
                 <h3 style={{ fontSize: '18px', fontWeight: '700' }}>Gestão de Contrato</h3>
                 <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{contractTenant.name} ({contractTenant.id})</p>
-                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  {contractTenant.stripe_subscription_id
-                    ? `Assinatura Stripe: ${contractTenant.subscription_status || 'aguardando'}${contractTenant.billing_cycle ? ` (${contractTenant.billing_cycle})` : ''}${contractTenant.current_period_end ? ` · próximo vencimento ${new Date(contractTenant.current_period_end).toLocaleDateString('pt-BR')}` : ''}. Plano e status são atualizados automaticamente pelo Stripe.`
-                    : 'Sem assinatura no Stripe (contrato gerenciado manualmente).'}
-                </p>
               </div>
               <button onClick={() => setContractTenant(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={20} /></button>
             </div>
             <form onSubmit={saveContract}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+              <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <label style={{ fontSize: '13px', fontWeight: '600' }}>Plano</label>
                   <select style={inputStyle} value={contractForm.plan_type} onChange={e => setContractForm({...contractForm, plan_type: e.target.value})}>
-                    <option value="Essencial">Essencial (50 ativos, 3 usuários)</option>
-                    <option value="Profissional">Profissional (300 ativos, 10 usuários)</option>
-                    <option value="Industrial">Industrial (1.000 ativos, 30 usuários)</option>
-                    <option value="Corporativo">Corporativo (ilimitado)</option>
+                    <option value="Starter">Starter</option>
+                    <option value="Pro">Pro</option>
+                    <option value="Enterprise">Enterprise</option>
                   </select>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -449,14 +469,6 @@ const Backoffice = () => {
                   </select>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: '600' }}>Ativos extras (+100 = R$ 99/mês)</label>
-                  <input type="number" min="0" step="100" style={inputStyle} value={contractForm.extra_assets} onChange={e => setContractForm({...contractForm, extra_assets: e.target.value})} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: '600' }}>Usuários extras (R$ 29/mês cada)</label>
-                  <input type="number" min="0" step="1" style={inputStyle} value={contractForm.extra_users} onChange={e => setContractForm({...contractForm, extra_users: e.target.value})} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <label style={{ fontSize: '13px', fontWeight: '600' }}>Início do Contrato</label>
                   <input type="date" style={inputStyle} value={contractForm.contrato_inicio} onChange={e => setContractForm({...contractForm, contrato_inicio: e.target.value})} />
                 </div>
@@ -472,7 +484,7 @@ const Backoffice = () => {
                   Cancelar Contrato
                 </button>
                 <button type="button" onClick={() => {
-                  const fim = contractForm.contrato_fim ? new Date(contractForm.contrato_fim) : new Date();
+                  const fim = contractForm.contrato_fim ? parseLocalDate(contractForm.contrato_fim) : new Date();
                   fim.setFullYear(fim.getFullYear() + 1);
                   setContractForm({...contractForm, contrato_fim: fim.toISOString().split('T')[0], status: 'Ativo'});
                 }} style={{ padding: '6px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: '600', border: '1px solid #d1fae5', background: '#d1fae5', color: '#059669', cursor: 'pointer' }}>

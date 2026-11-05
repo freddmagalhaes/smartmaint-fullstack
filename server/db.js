@@ -1,15 +1,35 @@
 const mysql = require('mysql2');
-require('dotenv').config();
+const { config } = require('./config');
 
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'smartmaint_db',
-  port: process.env.DB_PORT || 3306,
+  ...config.db,
   waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
+  connectionLimit: Number(process.env.DB_POOL_SIZE) || 10,
+  queueLimit: 0,
+  // Datas como texto 'YYYY-MM-DD' evitam deslocamento de fuso horário entre servidor e navegador
+  dateStrings: ['DATE'],
 });
 
-module.exports = pool.promise();
+const db = pool.promise();
+
+/**
+ * Executa `fn` dentro de uma transação. Faz rollback automático em caso de erro.
+ * `fn` recebe uma função `q(sql, params)` que retorna as linhas.
+ */
+db.transaction = async (fn) => {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    const q = async (sql, params) => (await conn.query(sql, params))[0];
+    const result = await fn(q);
+    await conn.commit();
+    return result;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+};
+
+module.exports = db;

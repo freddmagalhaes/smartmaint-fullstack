@@ -1,117 +1,163 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
-import { 
-  Building2, Users, UserCircle, Shield, 
-  CreditCard, Save, Plus, Trash2, Edit2,
-  ExternalLink, X, FileText, CalendarDays, RefreshCw, CheckCircle2
-} from 'lucide-react';
-import { useAuth, ROLES } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import TempPasswordModal from '../components/TempPasswordModal';
-import PlanUsage from '../components/PlanUsage';
-import SubscriptionPanel from '../components/SubscriptionPanel';
 import { useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
+import {
+  Building2, Users, UserCircle, Shield,
+  CreditCard, Save, Plus, Trash2, Edit2,
+  X, FileText, CalendarDays, RefreshCw, CheckCircle2, KeyRound, Factory, History
+} from 'lucide-react';
+import UnitsTab from './settings/UnitsTab';
+import AuditTab from './settings/AuditTab';
+import BillingTab from './settings/BillingTab';
+import DataExport from './settings/DataExport';
+import { useAuth, ROLES, isBackofficeUser } from '../contexts/AuthContext';
+import { useData } from '../contexts/DataContext';
+import { apiFetch, withQuery } from '../api/client';
+import { formatDate, formatCurrency, parseLocalDate } from '../utils/format';
+
+const TEAM_ROLES = [
+  { value: ROLES.ADMIN, label: 'Administrador' },
+  { value: ROLES.MANAGER, label: 'Gerente / Supervisor' },
+  { value: ROLES.USER, label: 'Operador (Usuário)' },
+];
+
+const EMPTY_USER = { name: '', email: '', role: ROLES.USER, password: '' };
+
+// Dados cadastrais da empresa (também usados como tomador na nota fiscal de serviço)
+const COMPANY_FIELDS = ['name', 'razao_social', 'cnpj', 'email_financeiro', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf', 'municipio_ibge'];
+const ADDRESS_FIELDS = [
+  { key: 'razao_social', label: 'Razão social', span: 2 },
+  { key: 'email_financeiro', label: 'E-mail financeiro (recebe faturas e notas)', type: 'email', span: 2 },
+  { key: 'cep', label: 'CEP', maxLength: 9 },
+  { key: 'logradouro', label: 'Logradouro' },
+  { key: 'numero', label: 'Número', maxLength: 20 },
+  { key: 'complemento', label: 'Complemento', maxLength: 100 },
+  { key: 'bairro', label: 'Bairro', maxLength: 100 },
+  { key: 'cidade', label: 'Cidade', maxLength: 100 },
+  { key: 'uf', label: 'UF', maxLength: 2 },
+  { key: 'municipio_ibge', label: 'Código IBGE do município', maxLength: 7 },
+];
 
 const Settings = () => {
-  const { user, activeTenant, tenants, hasRole } = useAuth();
+  const { user, activeTenant, tenants, hasRole, setToken, updateCurrentUser, refreshTenants } = useAuth();
   const { users, addUser, updateUser, deleteUser } = useData();
-  const [activeTab, setActiveTab] = useState(hasRole([ROLES.ROOT, ROLES.ADMIN]) ? 'company' : 'profile');
-  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
-  const [editingUserId, setEditingUserId] = useState(null);
-  const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
-  
-  // Dados do contrato do tenant ativo
-  const currentTenant = Array.isArray(tenants) ? tenants.find(t => t.id === activeTenant) : null;
-  
-  const [tempCredential, setTempCredential] = useState(null);
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  // Retorno do checkout do Stripe (?billing=success|canceled)
-  useEffect(() => {
-    const result = searchParams.get('billing');
-    if (!result) return;
-    if (result === 'success') toast.success('Pagamento recebido! Sua assinatura será ativada em instantes.');
-    else toast.info('Assinatura não concluída. Você pode tentar de novo quando quiser.');
-    setSearchParams({}, { replace: true });
-  }, [searchParams, setSearchParams]);
-  const [userFormData, setUserFormData] = useState({
-    name: '',
-    email: '',
-    role: 'Usuário'
-  });
+  const [searchParams] = useSearchParams();
+  const canAdmin = hasRole([ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN]);
+  // Conta ainda sem assinatura: só empresa, perfil e faturamento
+  const isPending = !isBackofficeUser(user) && user?.tenant_status === 'Pendente';
 
   const tabs = [
-    { id: 'company', label: 'Empresa', icon: Building2, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN] },
-    { id: 'users', label: 'Equipe', icon: Users, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN] },
-    { id: 'profile', label: 'Meu Perfil', icon: UserCircle, roles: [ROLES.ROOT, ROLES.BACKOFFICE, ROLES.ADMIN, ROLES.MANAGER, ROLES.USER] },
-    { id: 'billing', label: 'Faturamento', icon: CreditCard, roles: [ROLES.ROOT] },
-  ];
+    { id: 'company', label: 'Empresa', icon: Building2, visible: canAdmin },
+    { id: 'users', label: 'Equipe', icon: Users, visible: canAdmin && !isPending },
+    { id: 'units', label: 'Unidades', icon: Factory, visible: canAdmin && !isPending },
+    { id: 'audit', label: 'Auditoria', icon: History, visible: canAdmin && !isPending },
+    { id: 'profile', label: 'Meu Perfil', icon: UserCircle, visible: true },
+    { id: 'billing', label: 'Faturamento', icon: CreditCard, visible: canAdmin },
+  ].filter((tab) => tab.visible);
+
+  const requestedTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(
+    tabs.some((t) => t.id === requestedTab) ? requestedTab : (isPending ? 'billing' : canAdmin ? 'company' : 'profile')
+  );
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [editingUserId, setEditingUserId] = useState(null);
+
+  // Dados do contrato do tenant ativo
+  const currentTenant = tenants.find(t => t.id === activeTenant) || null;
+
+  const [userFormData, setUserFormData] = useState(EMPTY_USER);
+  const [companyForm, setCompanyForm] = useState({ name: '', cnpj: '' });
+  const [profileName, setProfileName] = useState(user?.name || '');
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
+  const [saving, setSaving] = useState(null);
+
+  useEffect(() => {
+    if (!currentTenant) return;
+    setCompanyForm(Object.fromEntries(COMPANY_FIELDS.map((f) => [f, currentTenant[f] || ''])));
+  }, [currentTenant]);
 
   const handleOpenAddUser = () => {
     setEditingUserId(null);
-    setUserFormData({ name: '', email: '', role: 'Usuário' });
+    setUserFormData(EMPTY_USER);
     setIsUserModalOpen(true);
   };
 
   const handleOpenEditUser = (u) => {
     setEditingUserId(u.id);
-    setUserFormData({ ...u });
+    setUserFormData({ name: u.name, email: u.email, role: u.role, password: '' });
     setIsUserModalOpen(true);
   };
 
   const handleUserSubmit = async (e) => {
     e.preventDefault();
-    if (editingUserId) {
-      updateUser(editingUserId, userFormData);
-      setIsUserModalOpen(false);
-      return;
-    }
-    const created = await addUser(userFormData);
-    setIsUserModalOpen(false);
-    if (created?.temp_password) {
-      setTempCredential({ email: created.email, password: created.temp_password });
+    const { name, email, role, password } = userFormData;
+    const ok = editingUserId
+      ? await updateUser(editingUserId, { name, email, role })
+      : await addUser({ name, email, role, ...(password && { password }) });
+    if (ok) setIsUserModalOpen(false);
+  };
+
+  const save = async (key, action, successMessage) => {
+    setSaving(key);
+    try {
+      await action();
+      if (successMessage) toast.success(successMessage);
+      return true;
+    } catch (err) {
+      toast.error(err.message);
+      return false;
+    } finally {
+      setSaving(null);
     }
   };
 
-  const handleCheckout = async () => {
-    setIsCheckoutLoading(true);
-    try {
-      const tokenLocal = localStorage.getItem('token');
-      const res = await fetch('/api/billing/checkout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${tokenLocal}`
-        }
+  const handleCompanySave = (e) => {
+    e.preventDefault();
+    save('company', async () => {
+      await apiFetch(withQuery('/api/tenant', { tenant_id: activeTenant }), { method: 'PUT', body: companyForm });
+      await refreshTenants();
+    }, 'Dados da empresa atualizados!');
+  };
+
+  const handleProfileSave = (e) => {
+    e.preventDefault();
+    save('profile', async () => {
+      await apiFetch('/api/me', { method: 'PUT', body: { name: profileName } });
+      updateCurrentUser({ name: profileName });
+    }, 'Perfil atualizado!');
+  };
+
+  const handleNotificationsToggle = (enabled) => save('notifications', async () => {
+    await apiFetch('/api/me', { method: 'PUT', body: { notifications_enabled: enabled } });
+    updateCurrentUser({ notifications_enabled: enabled });
+  }, enabled ? 'Notificações por e-mail ativadas' : 'Notificações por e-mail desativadas');
+
+  const handlePasswordSave = async (e) => {
+    e.preventDefault();
+    if (passwordForm.newPassword !== passwordForm.confirm) return toast.error('As senhas não coincidem.');
+    const ok = await save('password', async () => {
+      const data = await apiFetch('/api/me/password', {
+        method: 'PUT',
+        body: { currentPassword: passwordForm.currentPassword, newPassword: passwordForm.newPassword },
       });
-      const data = await res.json();
-      if (res.ok && data.url) {
-        window.location.href = data.url;
-      } else {
-        alert(data.error || 'Erro ao gerar fatura');
-      }
-    } catch {
-      alert('Erro de comunicação.');
-    } finally {
-      setIsCheckoutLoading(false);
-    }
+      setToken(data.token);
+    }, 'Senha alterada! Outras sessões abertas foram encerradas.');
+    if (ok) setPasswordForm({ currentPassword: '', newPassword: '', confirm: '' });
   };
 
   return (
     <div className="fade-in">
-      <TempPasswordModal credential={tempCredential} onClose={() => setTempCredential(null)} />
-      <header style={styles.header}>
+      <header className="page-header" style={styles.header}>
         <div>
           <h1 style={styles.pageTitle}>Configurações</h1>
           <p style={styles.pageSubtitle}>Gerencie os detalhes da sua conta e da sua empresa.</p>
         </div>
       </header>
 
-      <div style={styles.container}>
+      <div className="settings-layout" style={styles.container}>
         {/* Sidebar de Abas */}
         <div className="premium-card" style={styles.tabSidebar}>
           {tabs.map((tab) => {
-            if (!hasRole(tab.roles)) return null;
             const isActive = activeTab === tab.id;
             return (
               <button 
@@ -140,25 +186,31 @@ const Settings = () => {
                 title="Informações da Empresa" 
                 description="Dados básicos da sua organização e unidade fabril." 
               />
-              <div style={styles.formGrid}>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Nome Fantasia</label>
-                  <input type="text" defaultValue={currentTenant?.name || user?.company} style={styles.input} />
+              <form onSubmit={handleCompanySave}>
+                <div className="form-grid" style={styles.formGrid}>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label} htmlFor="company-name">Nome Fantasia</label>
+                    <input id="company-name" required maxLength={255} type="text" value={companyForm.name} onChange={(e) => setCompanyForm({ ...companyForm, name: e.target.value })} style={styles.input} />
+                  </div>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label} htmlFor="company-cnpj">CNPJ</label>
+                    <input id="company-cnpj" type="text" maxLength={20} placeholder="00.000.000/0001-00" value={companyForm.cnpj} onChange={(e) => setCompanyForm({ ...companyForm, cnpj: e.target.value })} style={styles.input} />
+                  </div>
                 </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>CNPJ</label>
-                  <input type="text" placeholder="00.000.000/0001-00" style={styles.input} />
+                <h4 style={{ ...styles.planTitle, margin: '32px 0 16px' }}>Dados para faturamento e nota fiscal</h4>
+                <div className="form-grid" style={styles.formGrid}>
+                  {ADDRESS_FIELDS.map((f) => (
+                    <div key={f.key} style={{ ...styles.inputGroup, ...(f.span === 2 && { gridColumn: 'span 2' }) }}>
+                      <label style={styles.label} htmlFor={`company-${f.key}`}>{f.label}</label>
+                      <input id={`company-${f.key}`} type={f.type || 'text'} maxLength={f.maxLength || 255} value={companyForm[f.key] || ''} onChange={(e) => setCompanyForm({ ...companyForm, [f.key]: e.target.value })} style={styles.input} />
+                    </div>
+                  ))}
                 </div>
-              </div>
-              <button className="btn-primary" style={{ marginTop: '24px' }}>
-                <Save size={18} />
-                Salvar Alterações
-              </button>
-
-              <div style={{ marginTop: '32px' }}>
-                <SubscriptionPanel />
-                <PlanUsage />
-              </div>
+                <button type="submit" className="btn-primary" style={{ marginTop: '24px' }} disabled={saving === 'company'}>
+                  <Save size={18} />
+                  {saving === 'company' ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </form>
 
               {/* Seção: Contrato de Prestação de Serviços */}
               <div style={{ marginTop: '48px' }}>
@@ -182,7 +234,7 @@ const Settings = () => {
                           Contrato {currentTenant.status === 'Ativo' ? 'Ativo' : currentTenant.status}
                         </p>
                         <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                          Plano: <strong>{currentTenant.plan_type || 'Profissional'}</strong> • Valor mensal: <strong>R$ {parseFloat(currentTenant.valor_mensal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                          Plano: <strong>{currentTenant.plan_type || 'Pro'}</strong> • Valor mensal: <strong>{formatCurrency(currentTenant.valor_mensal)}</strong>
                         </p>
                       </div>
                       {currentTenant.renovacao_auto ? (
@@ -198,21 +250,21 @@ const Settings = () => {
                     </div>
 
                     {/* Datas do Contrato */}
-                    <div style={styles.formGrid}>
+                    <div className="form-grid" style={styles.formGrid}>
                       <div style={styles.inputGroup}>
                         <label style={styles.label}><CalendarDays size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Início do Contrato</label>
-                        <input type="date" value={currentTenant.contrato_inicio ? currentTenant.contrato_inicio.split('T')[0] : ''} style={styles.input} disabled />
+                        <input type="text" value={formatDate(currentTenant.contrato_inicio)} style={styles.input} disabled />
                       </div>
                       <div style={styles.inputGroup}>
                         <label style={styles.label}><CalendarDays size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Término / Renovação</label>
-                        <input type="date" value={currentTenant.contrato_fim ? currentTenant.contrato_fim.split('T')[0] : ''} style={styles.input} disabled />
+                        <input type="text" value={formatDate(currentTenant.contrato_fim)} style={styles.input} disabled />
                       </div>
                     </div>
 
                     {/* Tempo restante */}
                     {currentTenant.contrato_fim && (() => {
                       const hoje = new Date();
-                      const fim = new Date(currentTenant.contrato_fim);
+                      const fim = parseLocalDate(currentTenant.contrato_fim);
                       const diffMs = fim - hoje;
                       const diasRestantes = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
                       const isExpiring = diasRestantes <= 30;
@@ -236,19 +288,20 @@ const Settings = () => {
                     })()}
 
                     <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '20px' }}>
-                      Para alterações contratuais (cancelamento, upgrade de plano ou mudança no tipo de renovação), entre em contato com o suporte SmartMaint.
+                      Plano, forma de pagamento e cancelamento ficam em Configurações → Faturamento. Para condições contratuais especiais, fale com o suporte SmartMaint.
                     </p>
                   </>
                 ) : (
                   <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Dados do contrato não disponíveis.</p>
                 )}
               </div>
+              <DataExport />
             </div>
           )}
 
           {activeTab === 'users' && (
             <div className="fade-in">
-              <div style={styles.usersHeader}>
+              <div className="stack-mobile" style={styles.usersHeader}>
                 <SectionHeader 
                   title="Gestão de Equipe" 
                   description="Adicione ou remova membros da sua unidade na empresa." 
@@ -265,24 +318,24 @@ const Settings = () => {
                     <div style={styles.userAvatar}>
                       <UserCircle size={24} color={u.id === user?.id ? 'var(--primary)' : 'var(--text-muted)'} />
                     </div>
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={styles.userName}>{u.name} {u.id === user?.id && '(Você)'}</p>
                       <p style={styles.userEmail}>{u.email}</p>
                     </div>
                     <div style={{
                       ...styles.roleBadge,
-                      background: u.role === 'DONO' ? 'rgba(30, 58, 138, 0.1)' : '#f1f5f9',
-                      color: u.role === 'DONO' ? 'var(--primary)' : '#64748b'
+                      background: u.role === ROLES.ADMIN ? 'rgba(30, 58, 138, 0.1)' : '#f1f5f9',
+                      color: u.role === ROLES.ADMIN ? 'var(--primary)' : '#64748b'
                     }}>
                       <Shield size={12} />
                       {u.role}
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <button style={styles.actionBtn} onClick={() => handleOpenEditUser(u)}>
+                      <button style={styles.actionBtn} title="Editar" aria-label={`Editar ${u.name}`} onClick={() => handleOpenEditUser(u)}>
                         <Edit2 size={18} />
                       </button>
                       {u.id !== user?.id && (
-                        <button style={styles.deleteBtn} onClick={() => deleteUser(u.id)}>
+                        <button style={styles.deleteBtn} title="Remover" aria-label={`Remover ${u.name}`} onClick={() => deleteUser(u.id)}>
                           <Trash2 size={18} />
                         </button>
                       )}
@@ -299,61 +352,76 @@ const Settings = () => {
                 title="Meu Perfil" 
                 description="Suas informações pessoais de acesso ao sistema." 
               />
-              <div style={styles.formGrid}>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Nome Completo</label>
-                  <input type="text" defaultValue={user?.name} style={styles.input} />
+              <form onSubmit={handleProfileSave}>
+                <div className="form-grid" style={styles.formGrid}>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label} htmlFor="profile-name">Nome Completo</label>
+                    <input id="profile-name" required maxLength={255} type="text" value={profileName} onChange={(e) => setProfileName(e.target.value)} style={styles.input} />
+                  </div>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label} htmlFor="profile-email">E-mail</label>
+                    <input id="profile-email" type="email" value={user?.email || ''} style={styles.input} disabled />
+                  </div>
                 </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>E-mail</label>
-                  <input type="email" defaultValue={user?.email} style={styles.input} disabled />
+                <button type="submit" className="btn-primary" style={{ marginTop: '24px' }} disabled={saving === 'profile'}>
+                  <Save size={18} />
+                  {saving === 'profile' ? 'Salvando...' : 'Atualizar Perfil'}
+                </button>
+              </form>
+
+              {canAdmin || user?.role === ROLES.MANAGER ? (
+                <div style={{ marginTop: '48px' }}>
+                  <SectionHeader title="Notificações" description="Avisos por e-mail de O.S. crítica, preventiva gerada, estoque abaixo do mínimo e faturas." />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px' }}>
+                    <input
+                      type="checkbox"
+                      checked={user?.notifications_enabled !== false}
+                      disabled={saving === 'notifications'}
+                      onChange={(e) => handleNotificationsToggle(e.target.checked)}
+                    />
+                    Receber notificações por e-mail
+                  </label>
                 </div>
+              ) : null}
+
+              <div style={{ marginTop: '48px' }}>
+                <SectionHeader title="Alterar Senha" description="Ao trocar a senha, as outras sessões abertas com sua conta são encerradas." />
+                <form onSubmit={handlePasswordSave}>
+                  <div className="form-grid" style={styles.formGrid}>
+                    <div style={{ ...styles.inputGroup, gridColumn: 'span 2' }}>
+                      <label style={styles.label} htmlFor="current-password">Senha atual</label>
+                      <input id="current-password" required type="password" autoComplete="current-password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} style={styles.input} />
+                    </div>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label} htmlFor="new-password">Nova senha</label>
+                      <input id="new-password" required minLength={8} type="password" autoComplete="new-password" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} style={styles.input} />
+                    </div>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label} htmlFor="confirm-password">Confirmar nova senha</label>
+                      <input id="confirm-password" required minLength={8} type="password" autoComplete="new-password" value={passwordForm.confirm} onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })} style={styles.input} />
+                    </div>
+                  </div>
+                  <button type="submit" className="btn-primary" style={{ marginTop: '24px' }} disabled={saving === 'password'}>
+                    <KeyRound size={18} />
+                    {saving === 'password' ? 'Alterando...' : 'Alterar Senha'}
+                  </button>
+                </form>
               </div>
-              <button className="btn-primary" style={{ marginTop: '24px' }}>
-                <Save size={18} />
-                Atualizar Perfil
-              </button>
             </div>
           )}
 
-          {activeTab === 'billing' && (
-            <div className="fade-in">
-              <SectionHeader 
-                title="Plano e Faturamento" 
-                description="Gerencie sua assinatura do SmartMaint e histórico de pagamentos." 
-              />
-              <div style={styles.billingCard}>
-                <div style={styles.billingHeader}>
-                  <div>
-                    <h4 style={styles.planTitle}>Plano {currentTenant?.plan_type || 'Profissional'}</h4>
-                    <p style={styles.planDesc}>Acesso completo ao SmartMaint</p>
-                  </div>
-                  <div style={styles.planStatus}>{currentTenant?.status || 'Ativo'}</div>
-                </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <button 
-                    className="btn-primary" 
-                    onClick={handleCheckout} 
-                    disabled={isCheckoutLoading}
-                    style={{ flex: 1, justifyContent: 'center' }}
-                  >
-                    {isCheckoutLoading ? 'Gerando Pagamento...' : 'Pagar Fatura / Renovar'}
-                  </button>
-                  <button style={{...styles.billingBtn, flex: 1, justifyContent: 'center', background: 'white', border: '1px solid var(--border)', borderRadius: '8px'}}>
-                    Ver Notas Fiscais
-                    <ExternalLink size={16} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          {activeTab === 'units' && <UnitsTab />}
+
+          {activeTab === 'audit' && <AuditTab />}
+
+          {activeTab === 'billing' && <BillingTab />}
         </div>
       </div>
 
       {/* Modal de Novo/Editar Usuário */}
       {isUserModalOpen && (
-        <div style={styles.modalOverlay}>
-          <div className="premium-card fade-in" style={styles.modal}>
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>{editingUserId ? 'Editar Membro' : 'Adicionar Membro'}</h3>
               <button onClick={() => setIsUserModalOpen(false)} style={styles.closeBtn}>
@@ -361,7 +429,7 @@ const Settings = () => {
               </button>
             </div>
             <form onSubmit={handleUserSubmit}>
-              <div style={styles.formGrid}>
+              <div className="form-grid" style={styles.formGrid}>
                 <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
                   <label style={styles.label}>Nome Completo</label>
                   <input 
@@ -389,17 +457,18 @@ const Settings = () => {
                     value={userFormData.role}
                     onChange={(e) => setUserFormData({...userFormData, role: e.target.value})}
                   >
-                    <option value="Administrador">Administrador</option>
-                    <option value="Usuário">Operador (Usuário)</option>
+                    {TEAM_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
                 </div>
                 {!editingUserId && (
                   <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
-                    <label style={styles.label}>Senha de Acesso (opcional)</label>
-                    <input 
-                      type="password" 
-                      style={styles.input} 
-                      placeholder="Deixe em branco para gerar uma senha aleatória"
+                    <label style={styles.label}>Senha provisória (opcional)</label>
+                    <input
+                      type="password"
+                      minLength={8}
+                      autoComplete="new-password"
+                      style={styles.input}
+                      placeholder="Deixe em branco para enviar convite por e-mail"
                       value={userFormData.password || ''}
                       onChange={(e) => setUserFormData({...userFormData, password: e.target.value})}
                     />
@@ -427,7 +496,7 @@ const styles = {
   container: { display: 'grid', gridTemplateColumns: '260px 1fr', gap: '24px', alignItems: 'start' },
   tabSidebar: { padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' },
   tabBtn: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', textAlign: 'left', transition: 'var(--transition)' },
-  contentArea: { padding: '40px', minHeight: '500px' },
+  contentArea: { padding: 'clamp(20px, 4vw, 40px)', minHeight: '500px', minWidth: 0 },
   sectionHeader: { marginBottom: '32px', borderBottom: '1px solid var(--border)', paddingBottom: '20px' },
   sectionTitle: { fontSize: '18px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' },
   sectionDesc: { fontSize: '14px', color: 'var(--text-muted)' },
@@ -445,13 +514,6 @@ const styles = {
   roleBadge: { display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' },
   actionBtn: { color: 'var(--text-muted)', background: 'transparent', cursor: 'pointer', padding: '8px' },
   deleteBtn: { color: '#94a3b8', background: 'transparent', cursor: 'pointer', padding: '8px' },
-  billingCard: { background: '#f8fafc', borderRadius: '16px', padding: '24px', border: '1px solid var(--border)' },
-  billingHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' },
-  planTitle: { fontSize: '16px', fontWeight: '700', color: 'var(--text-main)' },
-  planDesc: { fontSize: '13px', color: 'var(--text-muted)' },
-  planStatus: { background: 'var(--success)', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '700' },
-  billingBtn: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--primary)', fontWeight: '600', background: 'transparent', cursor: 'pointer' },
-  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { width: '100%', maxWidth: '500px', padding: '32px', background: 'white' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' },
   modalTitle: { fontSize: '20px', fontWeight: '700' },

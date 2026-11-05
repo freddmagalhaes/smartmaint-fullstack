@@ -1,30 +1,36 @@
 const express = require('express');
+const { authMiddleware, requireLegalAcceptance, requireSubscription } = require('../middleware/auth');
+const { notFound } = require('../utils/errorHandler');
+
 const router = express.Router();
 
-const authRoutes = require('./authRoutes');
-const signupRoutes = require('./signupRoutes');
-const subscriptionRoutes = require('./subscriptionRoutes');
-const tenantRoutes = require('./tenantRoutes');
-const equipmentRoutes = require('./equipmentRoutes');
-const workOrderRoutes = require('./workOrderRoutes');
-const inventoryRoutes = require('./inventoryRoutes');
-const preventiveRoutes = require('./preventiveRoutes');
-const uploadRoutes = require('./uploadRoutes');
-const billingRoutes = require('./billingRoutes');
-const planRoutes = require('./planRoutes');
-const importRoutes = require('./importRoutes');
+// Rotas públicas
+router.use(require('./authRoutes').router);
+router.use(require('./signupRoutes').publicRouter);
 
-router.use(authRoutes);
-router.use(signupRoutes);
-router.use(subscriptionRoutes); // antes dos demais: aceita o token restrito de faturamento
-router.use(tenantRoutes);
-router.use(importRoutes);
-router.use(equipmentRoutes);
-router.use(workOrderRoutes);
-router.use(inventoryRoutes);
-router.use(preventiveRoutes);
-router.use(uploadRoutes);
-router.use(billingRoutes);
-router.use(planRoutes);
+// Daqui em diante todas as rotas exigem autenticação
+router.use(authMiddleware);
+router.use(require('./accountRoutes'));
+router.use(require('./signupRoutes').legalRouter);
+
+// Demais rotas: só depois de aceitar os documentos legais; conta sem assinatura vê só o faturamento
+router.use(requireLegalAcceptance);
+router.use(requireSubscription);
+router.use(require('./exportRoutes'));
+router.use(require('./tenantRoutes'));
+router.use(require('./equipmentRoutes'));
+router.use(require('./workOrderRoutes'));
+router.use(require('./inventoryRoutes'));
+router.use(require('./preventiveRoutes'));
+router.use(require('./uploadRoutes').apiRouter);
+router.use(require('./billingRoutes').router);
+router.use(require('./unitRoutes'));
+router.use(require('./dashboardRoutes'));
+router.use(require('./auditRoutes'));
+router.use(require('./planRoutes'));
+router.use(require('./fiscalRoutes'));
+router.use(require('./reportRoutes'));
+
+router.use(notFound);
 
 module.exports = router;

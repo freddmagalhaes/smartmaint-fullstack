@@ -1,24 +1,20 @@
-# Usa o Node 20 para o backend
-FROM node:20-alpine
-WORKDIR /app
+# SmartMaint — somente a API (para quem hospeda o frontend separado, ex.: S3 + CloudFront).
+# Para o deploy padrão (frontend + API no mesmo container) use o Dockerfile principal.
+FROM node:22-alpine
+ENV NODE_ENV=production \
+    PORT=3001 \
+    UPLOAD_DIR=/app/uploads
+WORKDIR /app/server
 
-ENV NODE_ENV=production
-
-# Copia apenas os arquivos de dependência do backend
-COPY server/package*.json ./
-
-# Instala somente as dependências de produção
+COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev
+COPY server ./
 
-# Copia o resto do código da pasta server
-COPY server/ .
+RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
+USER node
 
-# Pasta usada pelo multer para salvar os uploads
-RUN mkdir -p uploads
-
-# Porta usada pelo backend (server/index.js -> PORT, padrão 3001)
-ENV PORT=3001
 EXPOSE 3001
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -qO- "http://127.0.0.1:${PORT}/api/health" || exit 1
 
-# Inicia o servidor Node.js
-CMD ["npm", "start"]
+CMD ["node", "index.js"]

@@ -1,13 +1,21 @@
 import { useState } from 'react';
 import { 
   Package, Plus, Search, 
-  Edit2, Trash2, AlertCircle, Hash, DollarSign
+  Edit2, Trash2, AlertCircle, Hash, DollarSign, ArrowLeftRight
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
+import { usePagedList, useDebounced } from '../hooks/usePagedList';
+import Pagination from '../components/Pagination';
+import StockMovementsModal from '../components/StockMovementsModal';
 
 const Inventory = () => {
-  const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem } = useData();
+  const { units, activeUnit, addInventoryItem, updateInventoryItem, deleteInventoryItem } = useData();
   const [searchTerm, setSearchTerm] = useState('');
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [movementsItem, setMovementsItem] = useState(null);
+  const search = useDebounced(searchTerm.trim());
+  const list = usePagedList('/api/inventory', { q: search || undefined, low_stock: lowStockOnly ? 'true' : undefined });
+  const showUnits = units.length > 1;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
@@ -19,14 +27,9 @@ const Inventory = () => {
     unit_price: 0
   });
 
-  const filteredInventory = inventory.filter(item => 
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (item.sku && item.sku.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
-
   const handleOpenAdd = () => {
     setEditingId(null);
-    setFormData({ name: '', sku: '', quantity: 0, min_quantity: 5, unit_price: 0 });
+    setFormData({ name: '', sku: '', quantity: 0, min_quantity: 5, unit_price: 0, unit_id: activeUnit || '' });
     setIsModalOpen(true);
   };
 
@@ -36,25 +39,23 @@ const Inventory = () => {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const data = { 
-      ...formData, 
+    const data = {
+      name: formData.name,
+      sku: formData.sku,
+      unit_id: formData.unit_id ? Number(formData.unit_id) : null,
       quantity: Number(formData.quantity),
       min_quantity: Number(formData.min_quantity),
       unit_price: Number(formData.unit_price)
     };
-    if (editingId) {
-      updateInventoryItem(editingId, data);
-    } else {
-      addInventoryItem(data);
-    }
-    setIsModalOpen(false);
+    const ok = editingId ? await updateInventoryItem(editingId, data) : await addInventoryItem(data);
+    if (ok) setIsModalOpen(false);
   };
 
   return (
     <div className="fade-in">
-      <header style={styles.header}>
+      <header className="page-header" style={styles.header}>
         <div>
           <h1 style={styles.pageTitle}>Estoque de Peças</h1>
           <p style={styles.pageSubtitle}>Gerencie o inventário de reposição para manutenções.</p>
@@ -76,10 +77,15 @@ const Inventory = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+        <label style={styles.checkLabel}>
+          <input type="checkbox" checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} />
+          Somente abaixo do mínimo
+        </label>
       </div>
 
       <div className="premium-card" style={{ overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
+          <div className="table-wrap">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border)' }}>
@@ -92,7 +98,7 @@ const Inventory = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredInventory.length > 0 ? filteredInventory.map(item => {
+              {list.items.length > 0 ? list.items.map(item => {
                 const isLow = item.quantity <= item.min_quantity;
                 return (
                   <tr key={item.id} style={{ borderBottom: '1px solid var(--border)' }}>
@@ -129,8 +135,9 @@ const Inventory = () => {
                       )}
                     </td>
                     <td style={{ ...styles.td, textAlign: 'right' }}>
-                      <button style={styles.iconBtn} onClick={() => handleOpenEdit(item)}><Edit2 size={16} /></button>
-                      <button style={{ ...styles.iconBtn, color: 'var(--danger)' }} onClick={() => deleteInventoryItem(item.id)}><Trash2 size={16} /></button>
+                      <button style={styles.iconBtn} title="Entrada, ajuste e histórico" aria-label={`Movimentações de ${item.name}`} onClick={() => setMovementsItem(item)}><ArrowLeftRight size={16} /></button>
+                      <button style={styles.iconBtn} title="Editar" aria-label={`Editar ${item.name}`} onClick={() => handleOpenEdit(item)}><Edit2 size={16} /></button>
+                      <button style={{ ...styles.iconBtn, color: 'var(--danger)' }} title="Excluir" aria-label={`Excluir ${item.name}`} onClick={() => deleteInventoryItem(item.id)}><Trash2 size={16} /></button>
                     </td>
                   </tr>
                 );
@@ -143,31 +150,43 @@ const Inventory = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
+      <Pagination page={list.page} pageSize={list.pageSize} total={list.total} onChange={list.setPage} loading={list.loading} />
+      {movementsItem && <StockMovementsModal item={movementsItem} onClose={() => setMovementsItem(null)} />}
 
       {isModalOpen && (
-        <div style={styles.modalOverlay}>
-          <div className="premium-card fade-in" style={styles.modal}>
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>{editingId ? 'Editar Peça' : 'Nova Peça'}</h3>
             </div>
             <form onSubmit={handleSubmit}>
-              <div style={styles.formGrid}>
+              <div className="form-grid" style={styles.formGrid}>
                 <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
                   <label style={styles.label}>Nome da Peça</label>
                   <input required style={styles.input} value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
                 </div>
+                {showUnits && (
+                  <div style={{...styles.inputGroup, gridColumn: 'span 2'}}>
+                    <label style={styles.label}>Unidade</label>
+                    <select style={styles.input} value={formData.unit_id || ''} onChange={(e) => setFormData({...formData, unit_id: e.target.value})}>
+                      <option value="">Compartilhado entre unidades</option>
+                      {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>SKU / Código</label>
-                  <input style={styles.input} value={formData.sku} onChange={(e) => setFormData({...formData, sku: e.target.value})} />
+                  <input style={styles.input} value={formData.sku || ''} onChange={(e) => setFormData({...formData, sku: e.target.value})} />
                 </div>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Preço Unitário (R$)</label>
                   <input type="number" step="0.01" style={styles.input} value={formData.unit_price} onChange={(e) => setFormData({...formData, unit_price: e.target.value})} />
                 </div>
                 <div style={styles.inputGroup}>
-                  <label style={styles.label}>Quantidade Atual</label>
+                  <label style={styles.label}>{editingId ? "Saldo (alterar registra um ajuste)" : "Quantidade inicial"}</label>
                   <input type="number" required style={styles.input} value={formData.quantity} onChange={(e) => setFormData({...formData, quantity: e.target.value})} />
                 </div>
                 <div style={styles.inputGroup}>
@@ -188,16 +207,16 @@ const Inventory = () => {
 };
 
 const styles = {
+  checkLabel: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-muted)', whiteSpace: 'nowrap' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' },
   pageTitle: { fontSize: '24px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' },
   pageSubtitle: { fontSize: '14px', color: 'var(--text-muted)' },
-  toolbar: { padding: '16px 24px', marginBottom: '24px' },
+  toolbar: { padding: '12px 16px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' },
   searchWrapper: { display: 'flex', alignItems: 'center', gap: '12px', flex: 1, maxWidth: '400px' },
   searchInput: { width: '100%', border: 'none', fontSize: '14px', outline: 'none' },
   th: { padding: '16px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' },
   td: { padding: '16px 24px', fontSize: '14px', color: 'var(--text-main)', verticalAlign: 'middle' },
   iconBtn: { background: 'transparent', border: 'none', color: '#94a3b8', padding: '8px', cursor: 'pointer', borderRadius: '6px', transition: '0.2s' },
-  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { width: '100%', maxWidth: '600px', padding: '32px', background: 'white' },
   modalHeader: { marginBottom: '24px' },
   modalTitle: { fontSize: '20px', fontWeight: '700' },

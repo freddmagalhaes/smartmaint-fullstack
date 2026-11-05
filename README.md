@@ -1,291 +1,170 @@
 # 🛠️ SmartMaint - Gestão Inteligente de Manutenção
 
-SmartMaint é uma plataforma moderna e intuitiva para o gerenciamento de ativos, manutenção industrial e análise de risco. Projetada para otimizar processos de manutenção preventiva, corretiva e preditiva, a aplicação oferece uma visão consolidada de indicadores de performance (KPIs) e suporte à metodologia FMEA.
+SmartMaint é uma plataforma SaaS para gestão de ativos e manutenção industrial: ordens de serviço, planos preventivos, estoque, registro de falhas, análise FMEA e indicadores de confiabilidade (MTBF, MTTR, disponibilidade e R(t)), com isolamento de dados por cliente (multi-tenant), backoffice de contratos e cobrança online.
 
-## 🚀 Funcionalidades Principais
+## 🚀 Funcionalidades
 
-- **📊 Dashboard Estratégico:** Visualização de indicadores em tempo real.
-- **📋 Ordens de Serviço:** Gestão completa do ciclo de vida das O.S. com exportação para PDF.
-- **⚙️ Gestão de Ativos:** Cadastro e monitoramento de equipamentos por unidade (Tenant).
-- **📅 Planos Preventivos:** Agendamento e controle de manutenções recorrentes.
-- **📦 Gestão de Estoque:** Controle de peças e materiais para manutenções.
-- **⚠️ Registro de Falhas:** Histórico detalhado de quebras e reparos.
-- **🔍 Análise FMEA:** Identificação de modos de falha, efeitos e criticidade.
-- **📈 Simulador R(t):** Cálculo de confiabilidade e tempo médio entre falhas (MTBF/MTTR).
-- **🏢 Multi-Tenant:** Suporte a múltiplas empresas ou unidades fabris com isolamento de dados.
+- **📊 Dashboard:** disponibilidade, MTBF, taxa de falha, O.S. ativas e histórico de falhas e horas de reparo.
+- **📑 Relatórios gerenciais:** por período e unidade: O.S. por tipo/status/prioridade e tempo médio de solução, cumprimento das preventivas, custo de peças por mês, MTTR/MTBF/disponibilidade por equipamento e histórico de cada equipamento. Exporta em Excel e imprime/salva em PDF.
+- **🚀 Primeiros passos:** checklist no Dashboard do administrador do cliente novo (dados da empresa, equipamentos, preventiva, primeira O.S., estoque e equipe), com o progresso real.
+- **📱 Celular e QR Code:** cada equipamento tem um QR Code (etiquetas A4 para imprimir em **Equipamentos → Etiquetas QR**). O técnico escaneia com a câmera do celular e cai na ficha do equipamento (O.S. em aberto, próximas preventivas, últimas manutenções) com um botão para abrir a O.S. já preenchida. O SmartMaint pode ser instalado no celular como aplicativo e abre sem internet com os últimos dados consultados; O.S., comentários e mudanças de status feitos sem conexão ficam no aparelho e são enviados quando a internet volta (sem duplicar).
+- **📋 Ordens de Serviço:** abertura, execução, pausa e conclusão com tempo real de reparo; checklist, peças com baixa automática no estoque, fotos/anexos, comentários e impressão da O.S.
+- **⚙️ Equipamentos:** cadastro com foto e status de manutenção.
+- **📅 Planos Preventivos:** geram a O.S. automaticamente no vencimento (com antecedência configurável) e checklist padrão; concluir a O.S. recalcula o próximo vencimento.
+- **📦 Estoque:** peças por unidade ou compartilhadas, estoque mínimo, entrada, ajuste por contagem e histórico de movimentações; custo de peças por O.S. e por equipamento.
+- **📥 Importação:** equipamentos por planilha Excel (.xlsx) ou CSV, com pré-visualização e erros por linha.
+- **✉️ Notificações por e-mail:** O.S. crítica, preventiva gerada, estoque abaixo do mínimo, fatura vencendo e em atraso (cada aviso uma única vez; o usuário pode desligar no perfil).
+- **⚠️ Falhas e Reparos:** histórico usado nos indicadores.
+- **🔍 FMEA:** RPN (Severidade × Ocorrência × Detecção).
+- **📈 Simulador R(t):** confiabilidade por equipamento.
+- **🏭 Unidades fabris:** várias plantas ou filiais por cliente, com filtro por unidade em todas as telas.
+- **🏢 Backoffice:** clientes, contratos, faturas, planos e limites, dados fiscais, equipe de suporte e acesso assistido aos dados do cliente.
+- **🧾 Auditoria:** histórico de acessos e alterações por cliente.
+- **💳 Assinatura mensal:** cartão recorrente com 30 dias grátis, boleto e Pix (Pix Automático quando disponível), troca de plano, cancelamento, baixa automática por webhook e bloqueio de inadimplentes.
 
-## 🛡️ Segurança e Boas Práticas
+## 👥 Perfis de acesso
 
-Durante a auditoria de código, o SmartMaint foi configurado com as seguintes diretrizes de segurança:
-- **Prevenção contra SQL Injection:** Utilização estrita de *queries parametrizadas* com o pacote `mysql2`.
-- **Criptografia de Senhas:** Hashes seguros gerados através da biblioteca `bcrypt`.
-- **Autenticação:** Proteção de rotas baseada em roles com JSON Web Tokens (JWT).
-- **Isolamento Multi-Tenant:** Filtro obrigatório de `tenant_id` em consultas operacionais para prevenir vazamento de dados entre empresas.
-- **Dica de Produção:** Lembre-se de configurar a variável de ambiente `JWT_SECRET` com uma chave forte e avaliar a implementação de `express-rate-limit` nas rotas de login para prevenir força bruta.
+As permissões são aplicadas no backend (a interface apenas esconde o que o perfil não pode usar).
 
-## 🛠️ Tecnologias Utilizadas
+| Perfil | Acesso |
+|---|---|
+| **Root** (`is_master`) | Tudo, incluindo exclusão de clientes e equipe de suporte |
+| **Suporte** | Backoffice (clientes, contratos, faturas) e dados de qualquer cliente |
+| **Administrador** | Todos os módulos do próprio cliente, equipe, dados da empresa e faturamento |
+| **Gerente** | Operação do próprio cliente (equipamentos, O.S., preventivas, estoque, falhas, simulador) |
+| **Usuário** | Abre e acompanha ordens de serviço |
 
-### Frontend
-- **React.js** (Vite)
-- **Lucide React** (Ícones)
-- **React Router Dom** (Navegação)
-- **Context API** (Gestão de Estado)
+## 🛡️ Segurança
 
-### Backend
-- **Node.js** (Express)
-- **MySQL** (Banco de Dados)
-- **Dotenv** (Configuração de Ambiente)
+- Senhas com `bcrypt`; mínimo de 8 caracteres; contas novas recebem **convite por e-mail** (não existe senha padrão).
+- JWT revalidado a cada requisição: troca de senha, exclusão de usuário e bloqueio do cliente têm efeito imediato.
+- Isolamento multi-tenant no backend: o `tenant_id` vem do token (clientes) e todo vínculo entre registros é validado.
+- Validação de entrada com `zod` em todas as rotas; queries parametrizadas (`mysql2`).
+- `helmet` com Content Security Policy, rate limit geral e específico para login e recuperação de senha.
+- Uploads verificados pelo conteúdo do arquivo (PNG, JPG, WEBP, PDF), nomes aleatórios e separados por cliente.
+- Webhook do Stripe autenticado por assinatura.
+- Log de auditoria (logins, falhas de login, criação, alteração e exclusão), sem gravar senhas.
 
-## 🐳 Rodando com Docker (recomendado)
+## 📐 Planos e limites
 
-Sobe o projeto completo (MySQL + API + Frontend) com um único comando. Funciona no Linux, no macOS e no **Windows com Docker Desktop + WSL 2**.
+Os planos (`Starter`, `Pro`, `Enterprise`) ficam na tabela `plans` e são editados pelo Root em **Backoffice → Planos**: preço mensal, dias de teste e limites de usuários, equipamentos e unidades (em branco = ilimitado). Ao atingir o limite, a criação é bloqueada com a mensagem do plano (`403 PLAN_LIMIT`), e o administrador do cliente vê o uso em **Configurações → Faturamento**. Os valores iniciais são provisórios.
 
-### Pré-requisitos
-- Docker com o plugin Compose (`docker compose version`)
-- **Windows/WSL:** no Docker Desktop, ative *Settings → Resources → WSL Integration* para a sua distro e rode os comandos no terminal do WSL. Mantenha o projeto no sistema de arquivos do Linux (`~/...`), não em `/mnt/c/...`.
+## 💳 Assinatura e cobrança
 
-### Passo a passo
+O administrador do cliente assina em **Configurações → Faturamento**, escolhendo o plano e a forma de pagamento:
+
+| Forma | Como cobra | Teste grátis |
+|---|---|---|
+| Cartão de crédito | Assinatura no Stripe, cobrada automaticamente todo mês | Sim (dias do plano, uma vez por cliente) |
+| Pix Automático | Assinatura no Stripe com autorização no app do banco | Sim. Fica oculto até `STRIPE_PIX_AUTOMATICO=true` |
+| Boleto | O SmartMaint gera a fatura do mês `BILLING_INVOICE_LEAD_DAYS` antes do vencimento; o cliente paga pelo Checkout | Não |
+| Pix | Igual ao boleto, com QR Code Pix | Não |
+
+- O valor é o `valor_mensal` negociado no contrato do cliente ou, se vazio, o preço do plano.
+- Cada cobrança do Stripe vira uma fatura no histórico; fatura paga entra na fila da NFS-e.
+- Cartão recusado: a fatura fica "Atrasada", o Stripe tenta cobrar de novo e o cliente pode trocar o cartão em **Gerenciar pagamento** (portal do Stripe). Depois de `BILLING_GRACE_DAYS`, o acesso é bloqueado.
+- Troca de plano: no cartão a diferença é proporcional; no boleto/Pix vale a partir da próxima fatura. Não é possível trocar para um plano menor que o uso atual.
+- Cancelamento: no cartão vale no fim do período pago; no boleto/Pix as faturas param de ser geradas.
+
+No Stripe: cadastre o webhook `https://SEU_DOMINIO/api/billing/webhook` com os eventos `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.trial_will_end`, `invoice.paid` e `invoice.payment_failed`. Em **Settings → Billing → Customer portal**, ative a troca de forma de pagamento e o cancelamento. Em **Settings → Billing → Subscriptions and emails**, ative as novas tentativas automáticas (Smart Retries) e os e-mails de cartão recusado.
+
+## 📝 Cadastro, Termos de Uso e LGPD
+
+- **Cadastro pelo próprio cliente** (`/cadastro`): a empresa informa nome, e-mail e senha, aceita os documentos e recebe um link de confirmação (válido por 48 h). Confirmado o e-mail, a conta fica **Pendente**: só o faturamento fica acessível até a assinatura (cartão com teste grátis) ou o primeiro pagamento (boleto/Pix). Proteções: limite de cadastros por IP, campo invisível contra robôs e resposta igual para e-mails já cadastrados. Contas que nunca assinam são apagadas após `SIGNUP_PENDING_RETENTION_DAYS` (30). Desligue com `SIGNUP_ENABLED=false`. Em produção o cadastro exige SMTP.
+- **Termos de Uso** (`/termos`) e **Política de Privacidade** (`/privacidade`): textos em `src/pages/legal`, com os dados da empresa vindos de `LEGAL_COMPANY_NAME`, `LEGAL_CNPJ`, `LEGAL_ADDRESS`, `LEGAL_CONTACT_EMAIL` e `LEGAL_DPO_NAME`. **Os textos são uma minuta: revise com um advogado antes de vender.**
+- **Aceite**: todo usuário de cliente aceita a versão vigente no primeiro acesso (até lá a API responde `403 LEGAL_ACCEPTANCE_REQUIRED`). Cada aceite fica registrado com data, IP e navegador (`legal_acceptances`). Ao alterar os textos, mude `LEGAL_VERSION` em `server/utils/legal.js`: todos aceitam de novo.
+- **Exportação**: o Administrador baixa todos os dados da empresa em planilha (.xlsx) em **Configurações → Empresa** (portabilidade). A exportação fica no log de auditoria.
+- **Exclusão após o cancelamento**: os Termos prometem excluir os dados até 90 dias após o cancelamento (ou antes, a pedido). Faça isso em **Backoffice → Clientes → Excluir** (apenas o Root).
+
+## 🧾 NFS-e (Emissor Nacional)
+
+A emissão segue o padrão nacional (Sefin Nacional). O ambiente já está preparado:
+
+1. **Backoffice → Fiscal (NFS-e)**: dados do prestador (CNPJ, inscrição municipal, código IBGE do município, regime, código de tributação, alíquota de ISS e descrição do serviço) e um checklist do que falta.
+2. **Variáveis de ambiente**: certificado A1 em `NFSE_CERT_BASE64` (ou `NFSE_CERT_PATH`) e `NFSE_CERT_PASSWORD`, além de `NFSE_AMBIENTE` (`homologacao` ou `producao`). O certificado nunca é enviado pela interface.
+3. **Dados do tomador**: cada cliente preenche razão social, CNPJ e endereço em **Configurações → Empresa**.
+4. **Fila**: toda fatura paga gera uma NFS-e `Pendente`. A transmissão ao Emissor Nacional é ativada (`NFSE_ENABLED=true`) quando houver CNPJ, certificado e confirmação de que o município aderiu ao padrão nacional.
+
+## 📈 Logs e monitoramento
+
+- Logs da API em JSON (uma linha por evento, pronto para CloudWatch Logs Insights), com `X-Request-Id` em toda resposta para rastrear uma requisição de ponta a ponta. Senhas e tokens são mascarados.
+- Sentry opcional: `SENTRY_DSN` no backend e `VITE_SENTRY_DSN` no build do frontend (`docker build --build-arg VITE_SENTRY_DSN=...`).
+
+## 🛠️ Tecnologias
+
+- **Frontend:** React 19, Vite, React Router, Recharts, Lucide.
+- **Backend:** Node.js 22+, Express 5, MySQL 8, zod, Stripe, Nodemailer, AWS S3 (opcional).
+- **Testes:** `node:test` + `supertest` (integração com banco real).
+
+## 📦 Rodando localmente
+
+Pré-requisitos: Node.js 22+ e MySQL 8 (ou MariaDB 10.6+).
+
 ```bash
-# 1. Crie o arquivo de variáveis e defina um JWT_SECRET forte
-cp .env.example .env
-#    gere uma chave com: openssl rand -hex 32
+# 1. Dependências (o postinstall também instala as do backend)
+npm install
 
-# 2. Construa as imagens e suba os containers
-docker compose up -d --build
+# 2. Banco de dados
+mysql -u root -p -e "CREATE DATABASE smartmaint_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
 
-# 3. Acesse no navegador
-#    http://localhost:8080
+# 3. Configuração: copie e preencha (JWT_SECRET e DB_* são obrigatórios)
+cp server/.env.example server/.env
+
+# 4. Cria as tabelas e o usuário Root (as tabelas também são criadas ao iniciar o servidor)
+MASTER_EMAIL=voce@empresa.com MASTER_PASSWORD='uma-senha-forte' npm --prefix server run seed
+#    opcional: cliente de demonstração
+MASTER_EMAIL=... MASTER_PASSWORD=... DEMO_PASSWORD='outra-senha' npm --prefix server run seed -- --demo
+
+# 5. Em dois terminais
+npm --prefix server run dev   # API em http://localhost:3001
+npm run dev                   # Frontend em http://localhost:5173
 ```
 
-Na primeira inicialização o MySQL importa `server/database.sql` automaticamente (apenas a estrutura, sem usuários).
-Crie o primeiro usuário master do backoffice:
-
-```bash
-docker compose exec -e MASTER_EMAIL=voce@empresa.com -e MASTER_PASSWORD='uma-senha-forte-123' api npm run create-master
-```
-
-> Em desenvolvimento, `server/seed-demo.sql` cria clientes e usuários de demonstração com senha conhecida. **Nunca use em produção.**
-
-> Atualizando uma instalação existente? O usuário não-root do MySQL (`DB_USER`) só é criado em volumes novos. Em um volume antigo, crie-o manualmente ou mantenha `DB_USER=root` com a senha atual, e rode `ALTER TABLE users MODIFY role ENUM('Dono','Administrador','Usuário','Suporte') NOT NULL;`.
-
-### Serviços
-| Serviço | Container        | Porta no host                  | Descrição                                   |
-|---------|------------------|--------------------------------|---------------------------------------------|
-| `web`   | `smartmaint-web` | `8080` (`WEB_PORT`)            | Nginx com o build do React. Encaminha `/api` e `/uploads` para a API |
-| `api`   | `smartmaint-api` | não exposta                    | Backend Node/Express (porta interna 3001)   |
-| `db`    | `smartmaint-db`  | `127.0.0.1:3307` (`DB_EXTERNAL_PORT`) | MySQL 8, acessível só da própria máquina (DBeaver/Workbench) |
+Sem SMTP configurado, os e-mails (convites e recuperação de senha) são impressos no console do backend em desenvolvimento.
 
 ### Comandos úteis
+
+| Comando | O que faz |
+|---|---|
+| `npm run lint` | ESLint do frontend |
+| `npm run build` | Build de produção do frontend (`dist/`) |
+| `npm test` | Testes de integração da API (precisa de um MySQL acessível; usa o banco `smartmaint_test`) |
+| `npm --prefix server run migrate` | Aplica as migrations pendentes |
+| `NEW_PASSWORD='...' npm --prefix server run set-password -- email@x.com` | Redefine a senha de um usuário pelo terminal |
+
+## 🗄️ Banco de dados e migrations
+
+O schema é versionado em `server/migrations/` e aplicado automaticamente ao iniciar o servidor (desative com `RUN_MIGRATIONS=false` se preferir rodar `npm --prefix server run migrate` no pipeline de deploy).
+
+**Atualizando uma instalação antiga** (criada com o antigo `database.sql`): basta iniciar a nova versão. As migrations preservam os dados e:
+
+- adicionam os perfis `Gerente` e `Suporte`, colunas de revogação de sessão, tempo de reparo das O.S. e baixa de faturas;
+- **bloqueiam contas que ainda usam a senha padrão `123456`** (inclusive `master@smartmaint.com`). Use "Esqueci minha senha" ou `npm --prefix server run set-password` para definir uma nova senha.
+
+## ☁️ Deploy (AWS)
+
+O `Dockerfile` gera uma imagem única (frontend + API) que roda como usuário sem privilégios, com health check em `/api/health`:
+
 ```bash
-docker compose ps                 # status dos containers
-docker compose logs -f api        # logs do backend
-docker compose up -d --build api  # rebuild só da API após alterar o código
-docker compose down               # para tudo (mantém os dados)
-docker compose down -v            # para tudo e APAGA banco e uploads
+docker build -t smartmaint .
+docker run -p 3001:3001 --env-file server/.env smartmaint
 ```
 
-> Para reimportar o `database.sql` (por exemplo, depois de alterar o schema), rode `docker compose down -v` e suba de novo. Isso apaga os dados do banco.
+A infraestrutura completa (rede, ECS Fargate, RDS, S3, SES, WAF, alarmes) está em Terraform na pasta
+[`infra/`](infra/README.md), com deploy automático pelo GitHub Actions (`.github/workflows/deploy.yml`).
+O passo a passo para criar o ambiente está em [`infra/README.md`](infra/README.md).
 
-## 📦 Como Instalar e Rodar (sem Docker)
+Recomendações para produção (já aplicadas pelo Terraform):
 
-### Pré-requisitos
-- Node.js instalado
-- MySQL instalado e rodando
+- **Banco:** RDS MySQL 8 com backup automático (retenção mínima de 7 dias) e `DB_SSL=rds` (conexão criptografada).
+- **Arquivos:** defina `S3_BUCKET` (o disco do container é perdido a cada deploy). A role da aplicação precisa de `s3:PutObject` e `s3:GetObject`.
+- **HTTPS:** termine o TLS no ALB/CloudFront, defina `TRUST_PROXY=1` e `FORCE_HTTPS=true`.
+- **Segredos:** `JWT_SECRET` (mínimo de 32 caracteres), credenciais de banco, SMTP e Stripe via Secrets Manager/SSM, nunca na imagem.
+- **Stripe:** cadastre o webhook `https://SEU_DOMINIO/api/billing/webhook` com os eventos listados em [Assinatura e cobrança](#-assinatura-e-cobrança).
+- **Logs e alarmes:** CloudWatch para os logs do container e alarme no health check.
 
-### 1. Clonar o Repositório
-```bash
-git clone https://github.com/seu-usuario/smartmaint.git
-cd smartmaint
-```
-
-### 2. Configurar o Backend
-Acesse a pasta `server` e instale as dependências:
-```bash
-cd server
-npm install
-```
-
-Crie um arquivo `.env` na pasta `server` com as seguintes variáveis:
-```env
-PORT=3001
-DB_HOST=localhost
-DB_USER=root
-DB_PASSWORD=sua_senha
-DB_NAME=smartmaint_db
-DB_PORT=3306
-JWT_SECRET=gere-com-openssl-rand-hex-32
-```
-
-Importe o arquivo `database.sql` no seu banco de dados MySQL para criar a estrutura das tabelas.
-
-### 3. Configurar o Frontend
-Volte para a raiz e instale as dependências do frontend:
-```bash
-cd ..
-npm install
-```
-
-### 4. Rodar a Aplicação
-Inicie o **Backend** (em um terminal):
-```bash
-cd server
-npm run dev
-```
-
-Inicie o **Frontend** (em outro terminal):
-```bash
-cd ..
-npm run dev
-```
-
-A aplicação estará disponível em `http://localhost:5173`.
-
-## 🤝 Contribuição
-
-Contribuições são bem-vindas! Sinta-se à vontade para abrir uma Issue ou enviar um Pull Request.
-
-1. Faça um Fork do projeto
-2. Crie uma Branch para sua feature (`git checkout -b feature/NovaFeature`)
-3. Commit suas mudanças (`git commit -m 'Adicionando nova feature'`)
-4. Push para a Branch (`git push origin feature/NovaFeature`)
-5. Abra um Pull Request
+O `Dockerfile.api` gera apenas a API, para quem hospeda o frontend separadamente.
 
 ## 📄 Licença
 
-Este projeto está sob a licença ISC.
-
----
-Desenvolvido por **Frederico** 🚀
-
-
-## Pagamentos (Stripe)
-
-1. Defina `STRIPE_SECRET_KEY` e `FRONTEND_URL` no `.env`. Em produção, sem a chave o checkout responde 503.
-2. No painel do Stripe, cadastre um webhook apontando para `<FRONTEND_URL>/api/webhooks/stripe` com os eventos
-   `checkout.session.completed`, `checkout.session.async_payment_succeeded` e `checkout.session.async_payment_failed`.
-3. Copie o segredo do endpoint (`whsec_...`) para `STRIPE_WEBHOOK_SECRET`.
-
-Ao receber o pagamento, a fatura passa para **Paga** automaticamente (conferindo o valor) e, se o cliente não tiver
-mais faturas em aberto, um tenant **Inadimplente** volta a **Ativo**. Para testar localmente: `stripe listen --forward-to localhost:3001/api/webhooks/stripe`.
-
-## Segurança
-
-- CORS limitado a `FRONTEND_URL`/`CORS_ORIGINS`; limite de 10 tentativas por 15 min em login e recuperação de senha.
-- Novos clientes e usuários recebem senha provisória aleatória (retornada uma única vez como `temp_password`).
-- O MySQL não é exposto fora de `127.0.0.1` e a API usa um usuário sem privilégios de root.
-
-## Cadastro autoatendido e período de teste
-
-- A tela `/signup` cria o cliente com status **Trial** (`TRIAL_DAYS`, padrão 14) e o primeiro administrador, já com login automático.
-- O aceite dos Termos de Uso e da Política de Privacidade é obrigatório e fica registrado em `users.terms_accepted_at`.
-- Com o trial vencido o login é bloqueado (`TRIAL_EXPIRED`). Para liberar, mude o contrato do cliente no Backoffice (status **Ativo**).
-  Sessões já abertas continuam válidas até o token expirar (24 h).
-- Limite de 5 cadastros por hora por IP. `SIGNUP_ENABLED=false` desliga o cadastro.
-- Banco já existente? Aplique `server/migrations/001_trial_signup.sql`.
-- **Ainda não implementado:** confirmação do e-mail no cadastro e cobrança automática ao fim do trial.
-
-## Testes
-
-```bash
-cd server
-npm run test:docker   # sobe um MySQL descartável em Docker, roda a suíte e remove o container
-npm test              # usa TEST_DB_HOST/PORT/USER/PASSWORD (um MySQL já em execução)
-```
-
-## Planos e limites
-
-O catálogo fica em `server/utils/plans.js` (mantenha em sincronia com a tabela de preços publicada).
-
-| Plano | Ativos | Usuários | FMEA | Simulador R(t) | Importação por planilha |
-|---|---|---|---|---|---|
-| Essencial | 50 | 3 | – | – | – |
-| Profissional | 300 | 10 | ✅ | ✅ | ✅ |
-| Industrial | 1.000 | 30 | ✅ | ✅ | ✅ |
-| Corporativo | ilimitado | ilimitado | ✅ | ✅ | ✅ |
-
-- **Excedentes:** `extra_assets` e `extra_users` (Backoffice → contrato do cliente) somam-se ao limite do plano.
-- **Servidor aplica:** limite de ativos e de usuários (com trava por cliente, então requisições simultâneas não estouram o limite) e o bloqueio da API de FMEA (`403 FEATURE_NOT_IN_PLAN`).
-- **Só na interface:** o Simulador R(t) é calculado no navegador a partir das falhas cadastradas; o servidor não o bloqueia, a tela apenas oferece o upgrade.
-- **Downgrade não apaga dados:** o cliente acima do novo limite mantém o que já tem; só o cadastro de novos itens é bloqueado.
-- Cadastro autoatendido e trial começam no plano **Profissional**.
-- `GET /api/plan` devolve plano, limites, uso e recursos do cliente.
-- **Não modelado:** "plantas" (multi-unidade). Hoje cada cliente é um único tenant; não prometa limite de plantas até isso existir.
-- Banco já existente? Aplique `server/migrations/002_plan_limits.sql` (renomeia Starter/Pro/Enterprise e cria os campos de excedente). Revise antes: planos desconhecidos viram Essencial.
-
-## Importação de ativos por planilha
-
-Disponível a partir do plano **Profissional**. Em *Equipamentos → Importar planilha*:
-
-1. Baixe o modelo (ou use o seu): **.xlsx** ou **.csv**, até 1.000 linhas e 5 MB. A primeira linha traz os títulos; só **Nome** é obrigatório.
-   Colunas reconhecidas (com ou sem acento/maiúsculas): Nome, Tipo, Modelo, Número de série, Horas operadas, Data de início. Outras colunas são ignoradas.
-2. O sistema mostra uma **pré-visualização** (quantos serão importados, quais linhas são duplicadas) sem gravar nada.
-3. Ao confirmar, a importação é **tudo ou nada**: qualquer linha inválida ou estouro do limite do plano recusa o lote inteiro, com a linha de cada erro.
-
-Regras do servidor (`POST /api/equipments/import`, `server/routes/importRoutes.js`):
-- Só gestão do cliente (Dono, Administrador, Gerente) ou backoffice importa; usuário comum não.
-- Equipamento com número de série já cadastrado (ou repetido na planilha, sem diferenciar maiúsculas/acentos) é **ignorado** e informado: reenviar a mesma planilha não duplica. Linhas sem série nunca são consideradas duplicadas.
-- Respeita o limite de ativos do plano (incluindo excedentes) com a mesma trava por cliente do cadastro individual; os ignorados não consomem vaga.
-- A leitura do arquivo acontece no navegador (CSV com `;`/`,`/tab, UTF-8 ou Windows-1252, datas `dd/mm/aaaa`, milhares `1.200`; XLSX via `read-excel-file`, carregado só quando usado).
-- Formulas, imagens e abas extras do Excel não são interpretadas: só a primeira aba, só valores.
-
-Testes: `npm run test:unit` (leitura de CSV/XLSX, incluindo um `.xlsx` real em `src/utils/__fixtures__`) e a suíte do servidor (`cd server && npm run test:docker`).
-
-## QR code por equipamento e aplicativo instalável (PWA)
-
-**QR code.** Em *Equipamentos*, o ícone de QR de cada linha mostra o código do equipamento e imprime a etiqueta; o botão
-*Etiquetas QR* imprime uma folha com todos os equipamentos filtrados (até 120 por folha). O QR abre `/ativo/:id`, a ficha do
-equipamento (dados, últimas O.S., preventivas) com o botão **Abrir O.S. para este equipamento**, pensada para celular.
-- É preciso estar logado: quem escaneia sem sessão é levado ao login e volta para a ficha depois.
-- A ficha só mostra equipamentos do próprio cliente; id de outra empresa responde 404 (igual a id inexistente).
-- **Defina `VITE_PUBLIC_APP_URL`** no build (ex.: `https://app.suaempresa.com.br`). Ela vai dentro do QR: se um dia o endereço
-  interno mudar, as etiquetas já coladas nas máquinas continuam valendo. Sem ela, usa o endereço em que o sistema estiver aberto.
-- A leitura é feita pela câmera do celular (não há leitor dentro do app).
-
-**Aplicativo instalável (PWA).** O sistema pode ser instalado no celular/computador ("Instalar aplicativo" no menu ou pelo navegador).
-- Gera `manifest.webmanifest` e `sw.js` no build (`vite-plugin-pwa`). Exige **HTTPS** em produção (em `localhost` funciona sem).
-- **Offline:** o aplicativo abre sem internet, mas os **dados vêm do servidor**: sem conexão aparece um aviso e **nada é salvo**.
-  A API e os uploads nunca são guardados em cache. Não há fila de gravação offline.
-- O servidor e o nginx entregam `sw.js`/manifesto com `Cache-Control: no-cache` para que versões novas cheguem aos aparelhos.
-- O menu lateral começa recolhido em telas estreitas. As demais telas do sistema ainda não foram redesenhadas para celular;
-  a ficha do QR (`/ativo/:id`) é a tela pensada para uso em campo.
-- Ícones em `public/icons` (gerados a partir de `src/assets/logo.png`).
-
-## Assinatura recorrente (Stripe)
-
-Clientes contratam (e o acesso é liberado ou bloqueado) automaticamente, sem intervenção do suporte.
-
-**Como funciona**
-1. O administrador do cliente escolhe plano e ciclo (mensal ou anual) em *Configurações → Empresa* e vai ao checkout do Stripe (cartão).
-   Os valores saem **sempre do servidor** (`server/utils/plans.js`, campo `price`): o valor enviado pelo navegador é ignorado.
-   Quem assina durante o teste não perde os dias que restam (a primeira cobrança só ocorre ao fim dele).
-2. O Stripe avisa o sistema pelo webhook (`/api/webhooks/stripe`, assinatura verificada). **O Stripe é a fonte da verdade:**
-
-   | Status no Stripe | Acesso do cliente |
-   |---|---|
-   | `active`, `trialing` | liberado (plano, ciclo, próximo vencimento e valor ficam no contrato) |
-   | `past_due` | **mantido** durante as novas tentativas de cobrança; a tela avisa o administrador |
-   | `unpaid`, `paused` | bloqueado (`Inadimplente`) |
-   | `canceled` | bloqueado (`Cancelado`) |
-   | `incomplete` | nada muda (continua em teste) |
-
-3. Quem está com teste vencido ou pagamento pendente consegue entrar **só no faturamento** (token restrito de 30 min, emitido apenas a
-   administradores depois de validar a senha) para assinar ou regularizar. Esse token é recusado em todo o resto do sistema.
-4. *Gerenciar assinatura e faturas* abre o **portal do Stripe** (trocar cartão, ver faturas, cancelar).
-5. Cada cobrança paga é espelhada na tabela de faturas (histórico/MRR no backoffice).
-
-**Configuração**
-- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` e `FRONTEND_URL` (veja `.env.example`; o webhook precisa dos 8 eventos listados lá).
-- No painel do Stripe, **ative o portal do cliente** (Billing → Customer portal) e deixe desligada a troca de plano por ele: planos mudam por um novo checkout ou pelo suporte.
-- Os preços são criados no Stripe na hora do checkout (`price_data`), sem cadastro prévio de produtos.
-- **Cupons** (ex.: a oferta de lançamento): crie no painel do Stripe; o checkout já aceita código promocional.
-- Banco já existente? Aplique `server/migrations/003_subscriptions.sql`.
-
-**Garantias (cobertas por testes)**
-- Eventos repetidos são aplicados uma vez; eventos fora de ordem são ignorados; evento de assinatura antiga não cancela quem já contratou outra.
-- Um tenant nunca adota o cliente do Stripe de outro; plano inválido na metadata não altera o plano.
-
-**Limitações conhecidas**
-- Só **cartão**: não usei boleto/Pix porque a recorrência com eles depende do provedor e da conta. Se boleto/Pix recorrentes forem essenciais, o caminho é um provedor local (ex.: Asaas).
-- **Excedentes** (usuário/ativos extras) continuam sendo ajustados no Backoffice e **não são cobrados automaticamente** na assinatura.
-- Cliente com assinatura **cancelada** não se reativa sozinho (precisa falar com o suporte).
-- **O que foi e o que não foi validado contra o Stripe de verdade.** Os testes automatizados usam um Stripe simulado e eventos assinados com o mesmo algoritmo do Stripe. Além disso, a criação da sessão de checkout de assinatura foi aceita **uma vez pela API real do Stripe em modo de teste** (chave restrita `rk_test_`). **Não** foram validados com o Stripe real: o portal do cliente, o pagamento completo com cartão de teste, e a entrega dos webhooks reais. **Faça um teste ponta a ponta no modo de teste do Stripe antes de cobrar clientes** (cartão `4242 4242 4242 4242`, com o webhook apontando para o seu servidor).
+Software proprietário. Todos os direitos reservados. Consulte o arquivo [LICENSE](LICENSE).

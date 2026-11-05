@@ -1,74 +1,54 @@
 import { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth, isBackofficeUser } from '../contexts/AuthContext';
+import { homePathFor } from '../components/ProtectedRoute';
+import { apiFetch } from '../api/client';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { usePublicInfo } from '../api/publicInfo';
 import { LogIn, Mail, Lock, Loader2, Info, X } from 'lucide-react';
 import logo from '../assets/logo.png';
-import PlanPicker from '../components/PlanPicker';
-import { useBilling } from '../hooks/useBilling';
-
-// Teste vencido ou pagamento pendente: o administrador entra só no faturamento (token restrito) para assinar/regularizar
-const BillingGate = ({ gate, onBack }) => {
-  const billing = useBilling(gate.token);
-  const { data, loading, busy, error, openPortal } = billing;
-  const title = gate.code === 'TRIAL_EXPIRED' ? 'Seu período de teste terminou' : 'Pagamento pendente';
-  const showPortal = data?.can_manage && data?.subscription.has_customer;
-  return (
-    <div style={{ maxWidth: '760px', width: '100%', zIndex: 1 }} className="premium-card fade-in">
-      <div style={{ padding: '32px' }}>
-        <h1 style={{ fontSize: '22px', fontWeight: 700, color: 'var(--primary)', margin: '0 0 6px' }}>{title}</h1>
-        <p style={{ fontSize: '14px', color: 'var(--text-muted)', margin: '0 0 20px' }}>{gate.message}</p>
-        {error && <p role="alert" style={{ color: '#991b1b', fontSize: '13px' }}>{error}</p>}
-        {loading ? <p style={{ fontSize: '13px' }}>Carregando…</p> : showPortal && (
-          <button type="button" className="btn-primary" onClick={openPortal} disabled={busy} style={{ marginBottom: '16px' }}>
-            Atualizar pagamento e ver faturas
-          </button>
-        )}
-        {data && !data.subscription.has_subscription && <PlanPicker billing={billing} />}
-        <button type="button" onClick={onBack} style={{ marginTop: '20px', background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 600, cursor: 'pointer' }}>
-          ← Voltar ao login
-        </button>
-      </div>
-    </div>
-  );
-};
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [billingGate, setBillingGate] = useState(null);
   const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotMessage, setForgotMessage] = useState('');
   const [isForgotLoading, setIsForgotLoading] = useState(false);
+  const [unverified, setUnverified] = useState(false);
+  const [resendMessage, setResendMessage] = useState('');
+  const info = usePublicInfo();
   
   const { login } = useAuth();
   const navigate = useNavigate();
+  // Página que pediu login (ex.: ficha aberta pelo QR Code) para voltar a ela depois
   const location = useLocation();
+  const from = location.state?.from;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setResendMessage('');
     setIsLoading(true);
 
+    const result = await login(email, password);
+    setIsLoading(false);
+    if (result.ok) {
+      const back = from && from.pathname !== '/login' ? `${from.pathname}${from.search || ''}` : null;
+      navigate(back || homePathFor(result.user, isBackofficeUser(result.user), result.user.tenant_id), { replace: true });
+    } else {
+      setError(result.error);
+      setUnverified(result.code === 'EMAIL_NOT_VERIFIED');
+    }
+  };
+
+  const resendVerification = async () => {
     try {
-      const result = await login(email, password);
-      if (result.ok) {
-        // Volta para a página que a pessoa tentou abrir (ex.: ficha de um QR code); só caminhos internos
-        const from = location.state?.from;
-        const dest = from?.pathname && from.pathname.startsWith('/') && !from.pathname.startsWith('//')
-          ? `${from.pathname}${from.search || ''}` : '/';
-        navigate(dest, { replace: true });
-      } else if (result.billingToken) {
-        setBillingGate({ token: result.billingToken, code: result.code, message: result.error });
-      } else {
-        setError(result.error);
-      }
-    } catch {
-      setError('Erro de comunicação com o servidor.');
-    } finally {
-      setIsLoading(false);
+      const data = await apiFetch('/api/signup/resend', { method: 'POST', body: { email }, auth: false });
+      setResendMessage(data.message);
+    } catch (err) {
+      setResendMessage(err.message);
     }
   };
 
@@ -77,27 +57,14 @@ const Login = () => {
     setIsForgotLoading(true);
     setForgotMessage('');
     try {
-      const res = await fetch('/api/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: forgotEmail })
-      });
-      const data = await res.json();
+      const data = await apiFetch('/api/auth/forgot-password', { method: 'POST', body: { email: forgotEmail }, auth: false });
       setForgotMessage(data.message || 'Se o e-mail existir, um link foi enviado.');
-    } catch {
-      setForgotMessage('Erro ao tentar redefinir a senha.');
+    } catch (err) {
+      setForgotMessage(err.message);
     } finally {
       setIsForgotLoading(false);
     }
   };
-
-  if (billingGate) {
-    return (
-      <div style={{ ...styles.container, height: 'auto', minHeight: '100vh', padding: '24px' }}>
-        <BillingGate gate={billingGate} onBack={() => setBillingGate(null)} />
-      </div>
-    );
-  }
 
   return (
     <div style={styles.container}>
@@ -117,10 +84,15 @@ const Login = () => {
 
         <form onSubmit={handleSubmit} style={styles.form}>
           {error && (
-            <div style={styles.errorBanner}>
+            <div style={styles.errorBanner} role="alert">
               <Info size={18} />
               {error}
             </div>
+          )}
+          {unverified && (
+            resendMessage
+              ? <p style={styles.footerText}>{resendMessage}</p>
+              : <button type="button" style={styles.forgotBtn} onClick={resendVerification}>Reenviar e-mail de confirmação</button>
           )}
 
           <div style={styles.inputGroup}>
@@ -129,7 +101,7 @@ const Login = () => {
               <Mail size={18} style={styles.inputIcon} />
               <input
                 type="email"
-                placeholder="exemplo@smartmaint.com"
+                placeholder="voce@suaempresa.com.br"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 style={styles.input}
@@ -184,24 +156,23 @@ const Login = () => {
         </form>
 
         <div style={styles.footer}>
-          {import.meta.env.VITE_SIGNUP_ENABLED !== 'false' && (
-            <p style={styles.footerText}>
-              Ainda não tem conta? <Link to="/signup" style={{ color: 'var(--primary)', fontWeight: 600 }}>Teste grátis</Link>
+          {info?.signup_enabled && (
+            <p style={{ fontSize: '14px', marginBottom: '12px' }}>
+              Ainda não usa o SmartMaint? <Link to="/cadastro" style={{ color: 'var(--primary)', fontWeight: 600 }}>Crie sua conta</Link>
             </p>
           )}
-          <p style={styles.footerText}>Acesso restrito a colaboradores autorizados.</p>
-          {import.meta.env.DEV && (
-            <div style={styles.demoCredits}>
-              <p>Dica: 123456 | dono@smartmaint.com</p>
-            </div>
-          )}
+          <p style={styles.footerText}>
+            <Link to="/termos" style={{ color: 'inherit' }}>Termos de Uso</Link>
+            {' · '}
+            <Link to="/privacidade" style={{ color: 'inherit' }}>Política de Privacidade</Link>
+          </p>
         </div>
       </div>
 
       {/* Modal Esqueci a Senha */}
       {isForgotModalOpen && (
-        <div style={styles.modalOverlay}>
-          <div className="premium-card fade-in" style={styles.modal}>
+        <div className="modal-overlay">
+          <div className="premium-card fade-in modal-card" style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>Recuperar Senha</h3>
               <button onClick={() => setIsForgotModalOpen(false)} style={styles.closeBtn}>
@@ -227,7 +198,7 @@ const Login = () => {
                     <Mail size={18} style={styles.inputIcon} />
                     <input
                       type="email"
-                      placeholder="exemplo@smartmaint.com"
+                      placeholder="voce@suaempresa.com.br"
                       value={forgotEmail}
                       onChange={(e) => setForgotEmail(e.target.value)}
                       style={styles.input}
@@ -254,8 +225,9 @@ const Login = () => {
 
 const styles = {
   container: {
-    height: '100vh',
-    width: '100vw',
+    minHeight: '100dvh',
+    width: '100%',
+    padding: '16px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -279,7 +251,7 @@ const styles = {
   loginCard: {
     width: '100%',
     maxWidth: '420px',
-    padding: '40px',
+    padding: 'clamp(24px, 6vw, 40px)',
     zIndex: 1,
     display: 'flex',
     flexDirection: 'column',
@@ -371,12 +343,6 @@ const styles = {
     fontSize: '12px',
     color: 'var(--text-muted)',
   },
-  demoCredits: {
-    marginTop: '8px',
-    fontSize: '10px',
-    color: 'var(--text-muted)',
-    opacity: 0.6,
-  },
   forgotBtn: {
     background: 'none',
     border: 'none',
@@ -385,15 +351,6 @@ const styles = {
     fontWeight: '600',
     cursor: 'pointer',
     padding: '4px',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0, left: 0, right: 0, bottom: 0,
-    background: 'rgba(0,0,0,0.4)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
   },
   modal: {
     width: '100%',
