@@ -3,9 +3,8 @@ const {
   query, assertEquipmentInTenant, assertUnitInTenant, defaultUnitId, assertAffected, buildUpdate,
 } = require('../utils/routeHelpers');
 const { pageParams, paginate, like } = require('../utils/pagination');
-const { assertWithinLimit, getTenantPlan, requirePlanFeature } = require('../utils/plans');
+const { withinLimit, getTenantPlan, requirePlanFeature } = require('../utils/plans');
 const { HttpError } = require('../utils/errorHandler');
-const db = require('../db');
 const { audit } = require('../utils/audit');
 const { ROLES, MANAGERS, TENANT_ROLES, requireRole, tenantScope } = require('../middleware/rbac');
 const { parse, z, text, optionalText, id, date, nonNegative, idParam } = require('../utils/validate');
@@ -115,13 +114,12 @@ router.get('/equipments/options', requireRole(...TENANT_ROLES), tenantScope, asy
 
 router.post('/equipments', requireRole(...MANAGERS), tenantScope, async (req, res) => {
   const d = parse(equipmentSchema, req.body);
-  await assertWithinLimit(req.tenantId, 'equipments');
   const unitId = d.unit_id ?? await defaultUnitId(req.tenantId);
   await assertUnitInTenant(unitId, req.tenantId);
-  const result = await query(
+  const result = await withinLimit(req.tenantId, 'equipments', 1, (q) => q(
     'INSERT INTO equipments (tenant_id, unit_id, name, type, model, serie, image, total_op_time, data_inicio) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [req.tenantId, unitId, d.name, d.type ?? null, d.model ?? null, d.serie ?? null, d.image ?? null, d.total_op_time ?? 0, d.data_inicio ?? null]
-  );
+  ));
   await audit(req, { action: 'create', entity: 'equipment', entityId: result.insertId, changes: d });
   res.status(201).json({ id: result.insertId, ...d, unit_id: unitId, tenant_id: req.tenantId });
 });
@@ -216,7 +214,9 @@ router.post('/equipments/import', requireRole(...MANAGERS), tenantScope, require
     return res.status(errors.length ? 422 : 200).json({ valid: valid.length, errors, imported: 0 });
   }
 
-  await db.transaction(async (q) => {
+  // A checagem acima serve para o aviso/pré-visualização; o limite de verdade é conferido aqui, junto com a
+  // gravação, para que duas importações simultâneas não ultrapassem o plano.
+  await withinLimit(req.tenantId, 'equipments', valid.length, async (q) => {
     for (const row of valid) {
       await q(
         'INSERT INTO equipments (tenant_id, unit_id, name, type, model, serie, total_op_time, data_inicio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',

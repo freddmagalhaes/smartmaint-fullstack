@@ -60,6 +60,7 @@ Os planos ficam na tabela `plans` e o Root os edita em **Backoffice → Planos**
 - O anual é 10/12 do mensal (2 meses grátis). Teste grátis: 14 dias nos planos pagos.
 - A migration só reescreve os planos semeados se ainda estiverem como foram criados: o que o Root já editou é preservado.
 - **Limites:** ao atingir o limite, a criação é bloqueada com `403 PLAN_LIMIT`; o administrador vê o uso em **Configurações → Faturamento**.
+  A conferência é **atômica**: a contagem e a gravação acontecem na mesma transação, com a linha do cliente travada (`withinLimit` em `server/utils/plans.js`), então requisições simultâneas não ultrapassam o plano (equipamentos, usuários, unidades e importação). Código novo que cria recursos limitados deve usar `withinLimit`, não `assertWithinLimit` (que só serve para recusar barato antes de um trabalho caro).
 - **Recursos por plano:** FMEA e importação por planilha são bloqueados no servidor (`403 PLAN_FEATURE`) quando o plano não os inclui. O **simulador R(t)** é calculado no navegador, então só a interface o bloqueia (cadeado e convite ao upgrade): o servidor não consegue impedi-lo.
 - `GET /api/plan/features` informa os recursos do plano a qualquer perfil do cliente (a interface usa para mostrar cadeados).
 - Cliente com plano que não existe mais em `plans` não sofre nenhuma restrição (nunca trava clientes antigos).
